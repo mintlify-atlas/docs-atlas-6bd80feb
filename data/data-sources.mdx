@@ -1,0 +1,171 @@
+---
+title: "Data Sources"
+description: "External databases and resources used to generate TRIFID features"
+---
+
+## Overview
+
+TRIFID integrates data from multiple external databases to generate comprehensive predictive features for splice isoform functionality assessment. This page describes each data source and how to access them.
+
+## Primary Annotation Sources
+
+### GENCODE
+
+**Description**: The reference human gene annotation database providing comprehensive gene and transcript annotations.
+
+**Usage in TRIFID**: Source of protein-coding transcript annotations, exon structures, and genomic coordinates.
+
+**Access**:
+- Website: [gencodegenes.org](https://www.gencodegenes.org)
+- FTP Server: [ftp.ebi.ac.uk/pub/databases/gencode](ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human)
+- Statistics: [GENCODE annotation statistics](https://www.gencodegenes.org/human/stats.html)
+
+**File Types Used**:
+- GTF annotations: `gencode.vXX.annotation.gtf.gz`
+- GFF3 annotations: `gencode.vXX.annotation.gff3.gz`
+
+<Note>
+TRIFID was initially trained on GENCODE Release 27 (GRCh38.p10) but now supports multiple releases.
+</Note>
+
+### Ensembl
+
+**Description**: Genome browser and annotation database for vertebrate and model organism genomes.
+
+**Usage in TRIFID**: Primary annotation source for non-human species including rat, zebrafish, chicken, and other vertebrates.
+
+**Access**:
+- Website: [ensembl.org](https://www.ensembl.org)
+- FTP Server: Available through Ensembl FTP
+
+**Species Supported**: Rat, zebrafish, chicken, chimpanzee, pig, cow, macaque, fruitfly, and worm.
+
+### RefSeq (NCBI)
+
+**Description**: NCBI Reference Sequence database providing curated genomic, transcript, and protein sequences.
+
+**Usage in TRIFID**: Alternative annotation source for human genome (GRCh37 and GRCh38).
+
+**Access**:
+- Website: [ncbi.nlm.nih.gov/refseq](https://www.ncbi.nlm.nih.gov/refseq/)
+
+## Protein Structural and Functional Data
+
+### APPRIS
+
+**Description**: Database annotating principal and alternative splice isoforms using protein structural and functional information.
+
+**Usage in TRIFID**: Provides multiple features including:
+- Principal isoform annotations
+- Protein structural integrity scores
+- Functionally important residue annotations
+- Cross-species conservation evidence
+- ALT-Corsair evolutionary age scores
+
+**Access**:
+- Website: [appris.bioinfo.cnio.es](https://appris.bioinfo.cnio.es)
+- HTTP Server: [appris.bioinfo.cnio.es](https://appris.bioinfo.cnio.es/#/)
+- Methods: [APPRIS methods documentation](https://appris.bioinfo.cnio.es/#/help/methods)
+
+**File Types Used**:
+- `appris_data.principal.txt`: Principal isoform labels
+- `appris_data.appris.txt`: APPRIS method scores
+- `appris_data.transl.fa.gz`: Protein sequences
+- `appris_method.spade.gtf.gz`: Pfam domain annotations
+
+**Download Example (GENCODE 27)**:
+```bash
+mkdir -p data/external/appris/GRCh38/g27
+curl http://apprisws.bioinfo.cnio.es/pub/current_release/datafiles/homo_sapiens/e90v35/appris_data.principal.txt \
+  -o data/external/appris/GRCh38/g27/appris_data.principal.txt
+```
+
+### Pfam
+
+**Description**: Database of protein families and domains.
+
+**Usage in TRIFID**: Used to quantify the impact of alternative splicing on protein domains. TRIFID's Pfam effects module calculates whether domains are damaged, lost, or intact.
+
+**Access**:
+- Website: [pfam.xfam.org](https://pfam.xfam.org/)
+
+**Pre-computed Scores**:
+- [Pfam effects data](https://drive.google.com/file/d/1P6dra0JYng2uqW34i0eEjsi2GgHQOBte/view?usp=sharing)
+
+## Evolutionary Conservation Data
+
+### PhyloCSF
+
+**Description**: Tool for measuring evolutionary conservation of coding sequences using codon substitution frequencies.
+
+**Usage in TRIFID**: Complementary measure of evolutionary conservation across species.
+
+**Access**:
+- GitHub: [github.com/mlin/PhyloCSF](https://github.com/mlin/PhyloCSF/wiki)
+- Pre-computed scores: [Available for multiple genome versions](https://drive.google.com/file/d/1uct4q-qFAQXeAXzGyKE7dZ2lgUxihkju/view?usp=sharing)
+
+### ALT-Corsair
+
+**Description**: APPRIS module that quantifies the evolutionary age of orthologs by identifying the last common ancestor of the most distant ortholog.
+
+**Usage in TRIFID**: Reports evolutionary age scores representing conservation across species.
+
+**Access**:
+- Available through APPRIS webserver
+- Pre-computed scores: [ALT-Corsair dataset](https://drive.google.com/file/d/1KH4XqK2MbiG81FODKybJxipBuuze9XM_/view?usp=sharing)
+- Based on: [Corsair method](http://appris-tools.org/#/help/methods)
+
+## Expression Data
+
+### E-MTAB-2836 (RNA-seq)
+
+**Description**: Large-scale RNA-seq expression dataset from 122 human individuals across 32 tissues.
+
+**Usage in TRIFID**: Source data for QSplice module to quantify splice junction coverage.
+
+**Access**:
+- ArrayExpress: [E-MTAB-2836](https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-2836/)
+
+**Pre-computed Scores**:
+- [QSplice scores (GENCODE 27)](https://drive.google.com/file/d/16RKG2Hv5XizQvktcyCiAL6CHKlwJ_aeL/view?usp=sharing)
+
+<Note>
+Processing RNA-seq data requires the [APPRIS RNA-seq pipeline](https://github.com/fpozoc/appris_rnaseq).
+</Note>
+
+## Training Data
+
+### Proteomics Evidence (Kim et al., 2014)
+
+**Description**: Large-scale proteomics study providing experimental evidence for protein isoforms.
+
+**Usage in TRIFID**: Gold standard training set for the machine learning model.
+
+**Citation**: [Kim et al., 2014, Nature](https://www.nature.com/articles/nature13302)
+
+**Pre-computed Training Set**:
+- [TRIFID training set](https://drive.google.com/file/d/1E4OUEbfAGvCanhSlABiB8n-81p_Be8zi/view?usp=sharing) (GENCODE 27)
+
+## Pre-computed TRIFID Module Outputs
+
+For convenience, pre-computed outputs from TRIFID modules are available:
+
+| Module | Description | Data Link |
+|:-------|:------------|:----------|
+| QSplice | Splice junction coverage scores | [Download](https://drive.google.com/file/d/16RKG2Hv5XizQvktcyCiAL6CHKlwJ_aeL/view?usp=sharing) |
+| Pfam Effects | Domain impact scores | [Download](https://drive.google.com/file/d/1P6dra0JYng2uqW34i0eEjsi2GgHQOBte/view?usp=sharing) |
+| Fragment Labelling | Redundancy labels | [Download](https://drive.google.com/file/d/1TEEama9ZGL4vvgMgcXYNHL71eX0KjzH5/view?usp=sharing) |
+| PhyloCSF | Conservation scores | [Download](https://drive.google.com/file/d/1uct4q-qFAQXeAXzGyKE7dZ2lgUxihkju/view?usp=sharing) |
+| ALT-Corsair | Evolutionary age scores | [Download](https://drive.google.com/file/d/1KH4XqK2MbiG81FODKybJxipBuuze9XM_/view?usp=sharing) |
+
+## Centralized Data Repository
+
+All source data files needed to reproduce TRIFID analysis are available in the centralized sharepoint:
+
+[Google Drive - TRIFID Source Data](https://drive.google.com/drive/u/0/folders/1RL6BaYBbRdvQlPkFkk7XVSPuKsbR9w-5)
+
+## Feature Documentation
+
+Detailed descriptions of all 47 predictive features are available:
+
+[Feature Documentation PDF](https://drive.google.com/file/d/1XvAA0tNS6AOMMptMB9K1IHm6b7likAqc/view?usp=sharing)

@@ -1,0 +1,213 @@
+---
+title: label-fragments
+description: Label genome isoforms as duplications, fragments, readthrough transcripts, or NMD candidates
+---
+
+## Overview
+
+The `label_fragments` module labels genome isoforms based on their structural characteristics, identifying duplications, fragments, readthrough transcripts (RT), and nonsense-mediated decay (NMD) candidates. It uses GTF annotations, protein sequences, and APPRIS principal isoform data to classify transcripts.
+
+## Usage
+
+```bash
+python -m trifid.preprocessing.label_fragments \
+    --gtf data/genome_annotation/GRCh38/g27/gencode.v27.annotation.gtf.gz \
+    --seqs data/external/appris/GRCh38/g27/appris_data.transl.fa.gz \
+    --principals data/external/appris/GRCh38/g27/appris_data.principal.txt \
+    --outdir data/external/label_fragments/GRCh38/g27 \
+    --rm
+```
+
+## Command-Line Arguments
+
+<ParamField path="--gtf" type="string" required>
+  Path to GTF annotation file (GENCODE or Ensembl). Can be gzip compressed.
+</ParamField>
+
+<ParamField path="--seqs" type="string" required>
+  Protein sequences file in FASTA format from APPRIS/GENCODE (gzip compressed allowed).
+</ParamField>
+
+<ParamField path="--principals" type="string" required>
+  Path to APPRIS principal isoforms file listing reference transcripts per gene.
+</ParamField>
+
+<ParamField path="--outdir" type="string" required>
+  Output directory where results and intermediate files will be stored.
+</ParamField>
+
+<ParamField path="--trifid" type="string">
+  Optional path to existing TRIFID scores file (from previous version). Used to sort APPRIS annotations before labeling.
+</ParamField>
+
+<ParamField path="--rm" type="boolean" default="false">
+  If set, removes intermediate files after processing.
+</ParamField>
+
+## Core Functions
+
+### generate_annotations
+
+```python
+def generate_annotations(gtf_path: str) -> pd.DataFrame
+```
+
+Creates a custom pandas DataFrame from GTF annotations, filtering for protein-coding genes and relevant transcript types.
+
+**Filtered transcript types:**
+- protein_coding
+- nonsense_mediated_decay
+- non_stop_decay
+- polymorphic_pseudogene
+- IG (immunoglobulin)
+- TR (T-cell receptor)
+
+**Extracted tags:**
+- `readthrough` - Readthrough transcripts
+- `NF` - Not found (Start NF or End NF)
+- `transcript_support_level` - TSL annotation
+
+<ParamField path="gtf_path" type="string">
+  Path to GTF annotation file
+</ParamField>
+
+**Returns:** `pd.DataFrame` - GTF annotations with columns:
+- `gene_name` - Gene symbol
+- `gene_id` - Gene identifier
+- `transcript_id` - Transcript identifier
+- `gene_type` - Gene type (filtered to protein_coding)
+- `transcript_type` - Transcript type/biotype
+- `readthrough` - Readthrough tag if present
+- `NF` - Not found tag (Start NF or End NF)
+- `transcript_support_level` - TSL value
+
+---
+
+### generate_sequences
+
+```python
+def generate_sequences(fasta_path: str) -> pd.DataFrame
+```
+
+Creates a custom pandas DataFrame from protein FASTA sequences.
+
+<ParamField path="fasta_path" type="string">
+  Path to protein FASTA file
+</ParamField>
+
+**Returns:** `pd.DataFrame` - Protein sequences with columns:
+- `gene_id` - Gene identifier
+- `transcript_id` - Transcript identifier
+- `sequence` - Protein sequence
+
+---
+
+### get_seqlen
+
+```python
+def get_seqlen(outdir: str) -> str
+```
+
+Generates Perl command to calculate sequence lengths and merge with annotation data.
+
+<ParamField path="outdir" type="string">
+  Directory containing intermediate annotation files
+</ParamField>
+
+**Returns:** `str` - Command line string to execute Perl script
+
+---
+
+### get_NR_list
+
+```python
+def get_NR_list(outdir: str) -> str
+```
+
+Generates Perl command to identify non-redundant (NR) transcripts and label duplications/fragments.
+
+<ParamField path="outdir" type="string">
+  Directory containing processed annotation files
+</ParamField>
+
+**Returns:** `str` - Command line string to execute Perl script
+
+## Output Files
+
+The module generates several output files in the specified output directory:
+
+### gencode.qduplications.tsv.gz
+**Main output file** containing duplication and fragment labels for all transcripts. This file is used in TRIFID scoring to filter or adjust scores for fragmented/duplicated isoforms.
+
+**Expected columns:**
+- `gene_id` - Gene identifier
+- `transcript_id` - Transcript identifier
+- `sequence` - Protein sequence
+- `length` - Sequence length
+- `label` - Classification label (Fragment, Duplication, RT, NMD, etc.)
+
+### appris.pc_sequences.tsv
+Protein-coding sequences extracted from FASTA (removed if `--rm` is set).
+
+### gencode.pc_annotations.tsv
+Protein-coding annotations from GTF (removed if `--rm` is set).
+
+### gencode.pc_annotations.out.tsv
+Annotations with sequence lengths added (removed if `--rm` is set).
+
+### appris.principals.tsv
+Filtered APPRIS principal isoforms (removed if `--rm` is set).
+
+## Transcript Classification Labels
+
+The module identifies several types of potentially problematic isoforms:
+
+### Fragment
+Transcripts that are significantly shorter than other isoforms of the same gene, potentially representing incomplete or truncated proteins.
+
+### Duplication
+Transcripts with sequences that duplicate or closely match sequences from other transcripts, possibly representing annotation artifacts.
+
+### Readthrough (RT)
+Transcripts that span multiple genes due to readthrough transcription, tagged in GTF as `readthrough_transcript`.
+
+### NMD (Nonsense-Mediated Decay)
+Transcripts annotated as `nonsense_mediated_decay` in the GTF, predicted to be degraded by NMD pathway.
+
+### NF (Not Found)
+Transcripts with incomplete 5' or 3' ends, tagged as `start_NF` or `end_NF` in GTF.
+
+## Workflow
+
+The module follows this processing pipeline:
+
+1. **Generate sequences** - Extract protein sequences from FASTA
+2. **Generate annotations** - Extract relevant annotations from GTF
+3. **Filter principals** - Extract APPRIS principal isoforms
+4. **Calculate sequence lengths** - Run Perl script to add length information
+5. **Sort by TRIFID** (optional) - If existing TRIFID scores provided, use them for sorting
+6. **Identify duplications** - Run Perl script to label fragments and duplications
+7. **Compress output** - Gzip final results file
+
+## Dependencies
+
+- **Perl** - Required for running sequence length and NR list scripts
+- **gtfparse** - Python library for parsing GTF files
+- **APPRIS data** - Principal isoform annotations
+
+## Integration with TRIFID
+
+The duplication labels from this module are used in TRIFID to:
+
+- Filter out fragmented isoforms from scoring
+- Adjust scores for duplicated sequences
+- Identify potentially unreliable isoforms
+- Prioritize high-quality, complete protein-coding transcripts
+
+## Notes
+
+- The module specifically filters for protein-coding genes only
+- Transcript identifiers are normalized (version numbers removed for GENCODE)
+- Readthrough transcripts and NF-tagged transcripts are flagged during annotation
+- The Perl scripts perform the actual duplication detection using sequence similarity
+- If TRIFID scores are provided, they are used to prioritize transcripts before labeling

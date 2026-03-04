@@ -1,0 +1,236 @@
+---
+title: QSplice
+description: RNA-seq splice junction quantification for alternative isoform assessment
+---
+
+## Overview
+
+QSplice is a TRIFID preprocessing module that quantifies splice junction coverage from RNA-seq data to assess transcript-level expression. By analyzing STAR aligner output files (`SJ.out.tab`), QSplice maps unique reads to genome positions and calculates normalized coverage scores per transcript.
+
+This module is essential for determining which splice isoforms are actively expressed in biological samples, providing quantitative evidence of isoform usage across tissues.
+
+## Why QSplice Matters
+
+Alternative splicing can generate multiple transcript isoforms from a single gene, but not all are functionally relevant. QSplice helps distinguish:
+
+- **Highly expressed isoforms** with strong RNA-seq support
+- **Tissue-specific splice variants** that may have specialized functions
+- **Poorly supported isoforms** that may be transcriptional noise or rare variants
+
+By normalizing coverage relative to gene-level expression, QSplice identifies the "weakest link" in each transcript—the splice junction with lowest support that could indicate limited functional importance.
+
+## Command-Line Usage
+
+```bash
+python -m trifid.preprocessing.qsplice \
+    --gff data/genome_annotation/GRCh38/g27/gencode.v27.annotation.gff3.gz \
+    --outdir data/external/qsplice/GRCh38/g27 \
+    --samples out/E-MTAB-2836/GRCh38/STAR/g27 \
+    --version g
+```
+
+### Parameters
+
+| Parameter | Flag | Description |
+|-----------|------|-------------|
+| `--gff` | `-g` | GFF3 annotation file (gzipped) |
+| `--outdir` | `-o` | Output directory for results |
+| `--samples` | `-s` | Directory containing STAR `SJ.out.tab` files to process |
+| `--file` | `-f` | Custom pre-concatenated splice junction file (alternative to `--samples`) |
+| `--version` | `-v` | Genome annotation version (e.g., `g` for GENCODE) |
+| `--experiment` | `-e` | Experiment identifier (default: `emtab2836`) |
+| `--rm` | `-r` | Remove intermediate files after completion |
+
+## Input Files
+
+### Required Inputs
+
+1. **GFF3 annotation** - GENCODE or Ensembl genome annotation with gene/transcript/exon definitions
+2. **STAR output files** - `SJ.out.tab` files from STAR RNA-seq alignment, one per sample
+
+### STAR SJ.out.tab Format
+
+The STAR aligner produces splice junction files with the following columns:
+
+```
+chromosome  start  end  strand  intron_motif  annotated  unique_reads  multimapping_reads  max_overhang
+```
+
+QSplice filters for **annotated junctions only** (`annotated=1`) and uses **unique read counts** for quantification.
+
+## Output Files
+
+QSplice generates three main output files:
+
+### 1. `sj_maxp.{experiment}.tsv.gz`
+
+Maximum coverage per junction position across all samples.
+
+### 2. `sj_maxt.{experiment}.tsv.gz`
+
+Maximum coverage per junction position per tissue type.
+
+### 3. `qsplice.{experiment}.tsv.gz` (TRIFID Input)
+
+Final per-transcript scores with one row per protein-coding transcript.
+
+**Key columns:**
+
+| Column | Description |
+|--------|-------------|
+| `seqname` | Chromosome |
+| `gene_id` | Gene identifier |
+| `gene_name` | Gene symbol |
+| `transcript_id` | Transcript identifier |
+| `intron_number` | Which intron has minimum coverage |
+| `unique_reads` | Read count at the bottleneck junction |
+| `tissue` | Tissue with maximum coverage for this junction |
+| `gene_mean` | Average unique reads across all gene junctions |
+| `gene_mean_cds` | Average unique reads across CDS-spanning junctions only |
+| `RNA2sj` | Normalized score: `unique_reads / gene_mean` |
+| `RNA2sj_cds` | CDS-normalized score: `unique_reads / gene_mean_cds` |
+
+## How QSplice Calculates Scores
+
+### Step 1: Process RNA-seq Samples
+
+QSplice concatenates multiple STAR `SJ.out.tab` files and annotates each junction with tissue information.
+
+### Step 2: Map to Genome Positions
+
+For each unique genomic position (chromosome, start, end), QSplice identifies:
+- Maximum coverage across all samples
+- Maximum coverage per tissue type
+
+### Step 3: Annotate with CDS Coverage
+
+Introns are classified based on whether they span coding sequence (CDS) regions:
+- **`full`** - Both flanking exons contain CDS
+- **`partial`** - One flanking exon contains CDS
+- **`none`** - No CDS in flanking exons (UTR-only)
+
+### Step 4: Score Per Junction
+
+For each transcript, all introns are scored relative to gene-level expression:
+
+```
+RNA2sj = unique_reads / gene_mean
+RNA2sj_cds = unique_reads / gene_mean_cds
+```
+
+### Step 5: Score Per Transcript (Bottleneck)
+
+For each transcript, QSplice selects **the intron with the lowest coverage** among CDS-spanning junctions. This represents the weakest evidence point for the transcript's expression.
+
+Transcripts with all-UTR introns receive special handling to avoid penalizing non-coding regions.
+
+## Example: C1orf112
+
+Let's examine isoform **ENST00000472795** of the C1orf112 gene:
+
+### Gene: Chromosome 1 Open Reading Frame 112 (C1orf112)
+
+- **Ensembl:** [ENSG00000000460](https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000000460)
+- **UniProt:** [Q9NSG2 (CA112_HUMAN)](https://www.uniprot.org/uniprot/Q9NSG2)
+
+### Per-Junction Scores (ENST00000472795)
+
+| Intron | Position | Strand | CDS Coverage | Unique Reads | Tissue | RNA2sj | RNA2sj_cds |
+|--------|----------|--------|--------------|--------------|--------|--------|------------|
+| 1 | 169794906-169798856 | + | none | 2 | tonsil | 0.0297 | 0.0271 |
+| 2 | 169798959-169800882 | + | none | 69 | testis | 1.0241 | 0.9352 |
+| 3 | 169800972-169802620 | + | full | 74 | testis | 1.0984 | 1.0029 |
+| 4 | 169802726-169803168 | + | full | 77 | testis | 1.1429 | 1.0436 |
+| **5** | **169803310-169804074** | **+** | **full** | **57** | **testis** | **0.846** | **0.7725** |
+
+**Gene-level metrics:**
+- Gene mean: 67.37 unique reads
+- Gene mean (CDS): 73.78 unique reads
+
+### Final Transcript Score
+
+Among the CDS-spanning introns (3, 4, 5), **intron 5 has the lowest coverage** with 57 unique reads in testis tissue. This becomes the representative score for the entire transcript:
+
+- **RNA2sj:** 0.846
+- **RNA2sj_cds:** 0.7725
+
+This indicates that ENST00000472795 has moderate RNA-seq support, with its weakest junction still showing ~77% of the gene's average CDS coverage.
+
+### Comparison Across Isoforms
+
+| Transcript ID | Intron # | Exons | CDS Exons | Unique Reads | RNA2sj | RNA2sj_cds |
+|---------------|----------|-------|-----------|--------------|--------|------------|
+| ENST00000286031 | 6 | 24 | 22 | 53 | 0.7867 | 0.7183 |
+| ENST00000359326 | 7 | 25 | 22 | 53 | 0.7867 | 0.7183 |
+| ENST00000413811 | 20 | 23 | 14 | 62 | 0.9202 | 0.8403 |
+| **ENST00000472795** | **5** | **6** | **4** | **57** | **0.846** | **0.7725** |
+| ENST00000459772 | 2 | 23 | 3 | 7 | 0.1039 | 0.0949 |
+| ENST00000496973 | 5 | 6 | 6 | 8 | 0.1187 | 0.1084 |
+| ENST00000498289 | 3 | 29 | 0 | 0 | 0 | 0 |
+
+Notice how isoforms with low RNA2sj scores (like ENST00000498289 with 0) lack RNA-seq evidence and may be non-functional or annotation artifacts.
+
+## Interpreting QSplice Scores
+
+### Score Interpretation Guide
+
+| RNA2sj_cds Range | Interpretation |
+|------------------|----------------|
+| > 0.8 | Strong RNA-seq support; likely functional |
+| 0.5 - 0.8 | Moderate support; potentially functional |
+| 0.2 - 0.5 | Weak support; may be tissue-specific or low abundance |
+| < 0.2 | Very weak support; possibly non-functional or annotation artifact |
+
+### Important Considerations
+
+- **Tissue specificity:** Low scores may reflect absence from the sampled tissues rather than lack of function
+- **Sample depth:** Rare transcripts may be functional but undetected in the RNA-seq dataset
+- **Reference bias:** Novel splice junctions not in the annotation are excluded
+
+## Processing Pipeline
+
+QSplice internally performs these operations:
+
+1. **Generate introns** from GFF3 using GenomeTools (`gt gff3`)
+2. **Load annotations** for genes, transcripts, exons, and CDS regions
+3. **Concatenate samples** from multiple `SJ.out.tab` files
+4. **Map junctions** to find maximum coverage per position and per tissue
+5. **Score junctions** relative to gene expression levels
+6. **Score transcripts** by selecting the minimum junction per isoform
+
+## Integration with TRIFID
+
+QSplice scores are used as predictive features in the TRIFID machine learning model:
+
+- `RNA2sj` and `RNA2sj_cds` are among the 45+ features used to predict isoform functionality
+- Higher QSplice scores correlate with proteomics detection and functional importance
+- Combined with other features (Pfam effects, conservation, APPRIS), QSplice improves isoform classification accuracy
+
+## Pre-computed Data
+
+For GENCODE 27 (based on E-MTAB-2836 RNA-seq data from 32 human tissues):
+
+- [qsplice.emtab2836.tsv.gz](https://drive.google.com/file/d/16RKG2Hv5XizQvktcyCiAL6CHKlwJ_aeL/view) - Per-transcript scores
+- [sj_maxp.emtab2836.mapped.tsv.gz](https://drive.google.com/file/d/1FHaW_mOxW21mNF8-Tevkd2pLmiU4aovO/view) - Per-junction scores
+
+## Technical Notes
+
+### Performance
+
+- Processing ~120 samples typically takes 1-2 hours
+- Memory usage scales with the number of annotated junctions (~2-4 GB for human genome)
+
+### Dependencies
+
+- **GenomeTools** (`gt`) for intron generation
+- **Python packages:** pandas, numpy, loguru
+
+## Source Code
+
+Implementation: `trifid/preprocessing/qsplice.py:qsplice.py:1`
+
+Key functions:
+- `concat_samples()` - Merge multiple SJ.out.tab files
+- `map_junctions_positions()` - Extract maximum coverage per position
+- `score_per_junction()` - Calculate normalized junction scores
+- `score_per_transcript()` - Select minimum junction per transcript

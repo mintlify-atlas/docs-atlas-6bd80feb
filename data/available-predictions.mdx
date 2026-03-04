@@ -1,0 +1,69 @@
+---
+title: "Available Predictions"
+description: "Access pre-computed TRIFID predictions and features for multiple species and genome assemblies"
+---
+
+## Overview
+
+TRIFID provides pre-computed predictions and predictive features for a wide range of species and genome assemblies. Each dataset includes functionality scores for all annotated splice isoforms in the respective genome version.
+
+## Pre-computed Predictions
+
+The following table lists all available TRIFID predictions organized by genome assembly, species, and annotation source:
+
+| Genome Assembly | Species | Common Name | Model | Version | Database | Release Date | Data Access |
+|:----------------|:--------|:------------|:------|:--------|:---------|:-------------|:------------|
+| GRCh38 | *Homo sapiens* | Human | Human | v1 | GENCODE | 27 - 08.2017 | [Download](https://drive.google.com/drive/folders/1RcUgw62gXE1U2iqUHPWppaQvofP4PYuk) |
+| GRCh38 | *Homo sapiens* | Human | Human | v2 | GENCODE | 42 - 04.2022 | [Download](https://drive.google.com/drive/folders/1l0gKtd_phJyvNuAEpuRqycOC_OMabtkv) |
+| GRCh38 | *Homo sapiens* | Human | Human | v2 | GENCODE | 37 - 02.2021 | [Download](https://drive.google.com/drive/folders/18206rNxVX_V8x9Gao1WpdZ-1neh4rQMV) |
+| GRCh38 | *Homo sapiens* | Human | RefSeq | v2 | RefSeq - NCBI | 110 - 02.2020 | [Download](https://drive.google.com/drive/folders/1LwNGWsB2dB6hXzF9nGZ1Wem4ECJV_313) |
+| GRCh37 | *Homo sapiens* | Human | RefSeq | v2 | RefSeq - NCBI | 105 - 02.2020 | [Download](https://drive.google.com/drive/folders/1axo4UniwdNBpThxFPBVPs3Y0wxylP-L6) |
+| GRCh37 | *Homo sapiens* | Human | Human | v2 | GENCODE | 19 - 12.2013 | [Download](https://drive.google.com/drive/folders/1qbzl4y4tGnuR8QD5DUb4psTNB5b6Fydu) |
+| GRCm39 | *Mus musculus* | Mouse | Mouse | v2 | GENCODE | 31 - 04.2022 | [Download](https://drive.google.com/drive/folders/1VCj2dI3ua2rznrM481uTnl2XKzLCiErd) |
+| GRCm38 | *Mus musculus* | Mouse | Mouse | v2 | GENCODE | 25 - 11.2019 | [Download](https://drive.google.com/drive/folders/1V3E9_Q0GmbozO5_D4BM0ZVUeXxzpu9ZN) |
+| mRatBN7.2 | *Rattus norvegicus* | Rat | Vertebrates | v2 | Ensembl | 105 - 12.2021 | [Download](https://drive.google.com/drive/folders/1GdXK9BrmwfCpbgEoc9xUR79qryS0R7nw) |
+| GRCz11 | *Danio rerio* | Zebrafish | Vertebrates | v2 | Ensembl | 104 - 05.2021 | [Download](https://drive.google.com/drive/folders/1su-8I_VqHqYOdKX_WjDA8lMjFnMuFICz) |
+| GRCg7b | *Gallus gallus* | Chicken | Vertebrates | v2 | Ensembl | 108 - 10.2022 | [Download](https://drive.google.com/drive/folders/1YCBAOebJTFnx65wWJcSaTwuCH5JYgRGF) |
+| Pan_tro_3.0 | *Pan troglodytes* | Chimpanzee | Vertebrates | v2 | Ensembl | 104 - 05.2021 | [Download](https://drive.google.com/drive/folders/1psXzm8FsjQI6ce2yVWpOFCW7ib4IHp4B) |
+| Sscrofa11.1 | *Sus scrofa* | Pig | Vertebrates | v2 | Ensembl | 108 - 10.2022 | [Download](https://drive.google.com/drive/folders/19vhMdcS57dsuRWyBK-myC_iEJBXV4YEE) |
+| ARS-UCD1.2 | *Bos taurus* | Cow | Vertebrates | v2 | Ensembl | 104 - 05.2021 | [Download](https://drive.google.com/drive/folders/19ks-d7Feaja6igEv8zOujhRQ2xoNefGL) |
+| Mmul_10 | *Macaca mulatta* | Macaque | Vertebrates | v2 | Ensembl | 105 - 12.2021 | [Download](https://drive.google.com/drive/folders/1bjBappCZRMeAemx51sb1DLXlzG1fd3j0) |
+| BDGP6 | *Drosophila melanogaster* | Fruitfly | Invertebrates | v2 | Ensembl - Flybase | 107 - 07.2022 | [Download](https://drive.google.com/drive/folders/1BQ2Yob9CPJG32ZjuD_ST1-MJpsrjCXuV) |
+| WBcel235 | *Caenorhabditis elegans* | Worm | Invertebrates | v2 | Ensembl - Wormbase | 108 - 10.2022 | [Download](https://drive.google.com/drive/folders/1u2BkNF2ho70GloJu7pdvEffbfjaa_euq) |
+
+## Model Versions
+
+### v1 (Initial Release)
+The initial TRIFID model trained on GENCODE Release 27 (GRCh38.p10) with 45 predictive features. Released in March 2021.
+
+### v2 (Current Release)
+The updated TRIFID model with 47 predictive features (2 additional features added). Released in September 2022 with support for multiple species and genome assemblies.
+
+## Dataset Contents
+
+Each sharepoint contains:
+
+- **Predictions file**: TRIFID functionality scores for all isoforms
+- **Features file**: All 47 predictive features used by the model
+- **Metadata**: Gene and transcript annotations
+
+## File Format
+
+Prediction files are provided as compressed TSV files (`trifid_predictions.tsv.gz`) with the following columns:
+
+- `transcript_id`: Ensembl transcript identifier
+- `gene_id`: Ensembl gene identifier  
+- `gene_name`: Gene symbol
+- `trifid_score`: Functionality probability (0-1)
+- `appris`: APPRIS annotation label
+- Additional feature columns
+
+## Requesting New Data
+
+If you need predictions for a specific genome version or species not listed above, please [open an issue](https://github.com/fpozoc/trifid/issues/new) on the GitHub repository.
+
+## Related Resources
+
+- [TRIFID Training Set](https://drive.google.com/file/d/1E4OUEbfAGvCanhSlABiB8n-81p_Be8zi/view?usp=sharing) (GENCODE 27)
+- [Tutorial Notebook](https://github.com/fpozoc/trifid/blob/master/notebooks/01.tutorial.ipynb)
+- [Figures Notebook](https://github.com/fpozoc/trifid/blob/master/notebooks/02.figures.ipynb)

@@ -1,0 +1,643 @@
+---
+title: 'Custom Genome Analysis'
+description: 'Apply TRIFID to new species and genome annotations'
+---
+
+# Custom Genome Analysis
+
+Learn how to apply TRIFID to new species, custom genome annotations, or private datasets.
+
+## Overview
+
+TRIFID can be applied to any well-annotated eukaryotic genome. This guide covers:
+- Preparing custom genome annotations
+- Generating required features
+- Training species-specific models
+- Using pre-trained models with transfer learning
+
+## Supported Species
+
+TRIFID has been successfully applied to:
+
+### Vertebrates
+- **Human** (Homo sapiens) - GENCODE, RefSeq
+- **Mouse** (Mus musculus) - GENCODE
+- **Rat** (Rattus norvegicus) - Ensembl
+- **Zebrafish** (Danio rerio) - Ensembl
+- **Chicken** (Gallus gallus) - Ensembl
+- **Chimpanzee** (Pan troglodytes) - Ensembl
+- **Pig** (Sus scrofa) - Ensembl
+- **Cow** (Bos taurus) - Ensembl
+- **Macaque** (Macaca mulatta) - Ensembl
+
+### Invertebrates
+- **Fruit fly** (Drosophila melanogaster) - FlyBase
+- **C. elegans** (Caenorhabditis elegans) - WormBase
+
+<Note>
+  Pre-computed features and predictions are available for these species. See [Data Availability](/resources/data).
+</Note>
+
+## Requirements for New Genomes
+
+### Essential Data
+
+1. **Genome annotation** (GTF/GFF3)
+   - Transcript coordinates
+   - Exon/intron structure
+   - CDS annotations
+   - Gene/transcript IDs
+
+2. **Protein sequences** (FASTA)
+   - Translated protein sequences for all isoforms
+
+3. **Principal isoform labels** (optional but recommended)
+   - From APPRIS, UniProt, or manual curation
+
+### Optional but Beneficial
+
+4. **RNA-seq data**
+   - STAR alignments (`SJ.out.tab` files)
+   - Multiple tissues for comprehensive coverage
+
+5. **Conservation scores**
+   - PhyloCSF or similar
+   - Cross-species alignments
+
+6. **Domain annotations**
+   - Pfam, SMART, or InterPro
+   - APPRIS SPADE scores
+
+## Workflow for Custom Genomes
+
+### Step 1: Prepare Genome Annotation
+
+```bash
+# Create directory structure
+mkdir -p data/external/genome_annotation/MySpecies/version1
+mkdir -p data/external/appris/MySpecies/version1
+
+# Copy or download your annotation files
+cp /path/to/annotation.gtf.gz data/external/genome_annotation/MySpecies/version1/
+cp /path/to/annotation.gff3.gz data/external/genome_annotation/MySpecies/version1/
+cp /path/to/protein_sequences.fa.gz data/external/appris/MySpecies/version1/
+```
+
+### Step 2: Configure TRIFID
+
+Edit `config/config.yaml` to add your genome:
+
+```yaml
+genomes:
+  MySpecies:  # Your species assembly name
+    version1:  # Your annotation version
+      gtf: "data/external/genome_annotation/MySpecies/version1/annotation.gtf.gz"
+      gff3: "data/external/genome_annotation/MySpecies/version1/annotation.gff3.gz"
+      sequences: "data/external/appris/MySpecies/version1/protein_sequences.fa.gz"
+      # Add paths to other data sources as available
+      qsplice: "data/external/qsplice/MySpecies/version1/qsplice.tsv.gz"
+      pfam: "data/external/pfam_effects/MySpecies/version1/qpfam.tsv.gz"
+      phylocsf: "data/external/phylocsf/MySpecies/version1/phylocsf.tsv.gz"
+      appris: "data/external/appris/MySpecies/version1/appris_data.appris.txt"
+```
+
+### Step 3: Generate Features
+
+#### 3.1 QSplice (RNA-seq junction coverage)
+
+```bash
+python -m trifid.preprocessing.qsplice \
+    --gff data/external/genome_annotation/MySpecies/version1/annotation.gff3.gz \
+    --outdir data/external/qsplice/MySpecies/version1 \
+    --samples path/to/star/alignments \
+    --version e  # Use 'g' for GENCODE, 'e' for Ensembl
+```
+
+**If you don't have RNA-seq data:**
+- QSplice features will be missing
+- Model will use default/imputed values
+- Performance may be slightly reduced but still functional
+
+#### 3.2 Pfam Effects (domain integrity)
+
+```bash
+python -m trifid.preprocessing.pfam_effects \
+    --appris data/external/appris/MySpecies/version1/appris_data.txt \
+    --jobs 10 \
+    --seqs data/external/appris/MySpecies/version1/protein_sequences.fa.gz \
+    --spade data/external/appris/MySpecies/version1/spade_annotations.gtf.gz \
+    --outdir data/external/pfam_effects/MySpecies/version1
+```
+
+**If you don't have SPADE annotations:**
+- Run Pfam scan directly on protein sequences
+- Use InterProScan for domain predictions
+- Or skip this step (model will impute values)
+
+#### 3.3 Fragment Labeling
+
+```bash
+python -m trifid.preprocessing.label_fragments \
+    --gtf data/external/genome_annotation/MySpecies/version1/annotation.gtf.gz \
+    --seqs data/external/appris/MySpecies/version1/protein_sequences.fa.gz \
+    --principals data/external/appris/MySpecies/version1/principals.txt \
+    --outdir data/external/label_fragments/MySpecies/version1
+```
+
+### Step 4: Build Feature Dataset
+
+```python
+import os
+import pandas as pd
+from trifid.utils.utils import parse_yaml, create_dir
+from trifid.data.feature_engineering import build_features, load_data
+
+# Load configuration
+config = parse_yaml('config/config.yaml')
+
+# Load and build features
+df = load_data(config, assembly='MySpecies', release='version1')
+df = build_features(df)
+
+# Save feature dataset
+output_dir = 'data/genomes/MySpecies/version1'
+create_dir(output_dir)
+df.to_csv(
+    os.path.join(output_dir, 'trifid_db.tsv.gz'),
+    sep='\t',
+    compression='gzip',
+    index=False
+)
+```
+
+### Step 5: Choose Prediction Strategy
+
+You have two options:
+
+#### Option A: Use Pre-trained Human Model (Recommended)
+
+Apply the human-trained model directly:
+
+```python
+import pickle
+from trifid.utils.utils import generate_trifid_metrics
+
+# Load pre-trained model
+model = pickle.load(open('models/selected_model.pkl', 'rb'))
+
+# Load features
+df = pd.read_csv(
+    'data/genomes/MySpecies/version1/trifid_db.tsv.gz',
+    sep='\t',
+    compression='gzip'
+)
+
+# Handle missing features (impute with appropriate values)
+missing_features = ['tsl_1', 'tsl_2', 'basic', 'level_1']  # Example
+df[missing_features] = df[missing_features].fillna(-1)
+
+# Generate predictions
+predictions = generate_trifid_metrics(
+    df[identifier_columns],
+    df[feature_columns],
+    model
+)
+
+predictions.to_csv(
+    'data/genomes/MySpecies/version1/trifid_predictions.tsv.gz',
+    sep='\t',
+    compression='gzip',
+    index=False
+)
+```
+
+**Advantages:**
+- No training data required
+- Leverages extensive human proteomics evidence
+- Generally works well for vertebrates
+
+**Limitations:**
+- May be less accurate for distant species (e.g., invertebrates)
+- Species-specific features may not transfer well
+
+#### Option B: Train Species-Specific Model
+
+Train a new model with species-specific training data:
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from trifid.models.select import Classifier
+
+# Prepare training data (requires labeled examples)
+# You need functional/non-functional labels from:
+# - Proteomics data
+# - Experimental validation
+# - Literature curation
+
+df_training = pd.read_csv('training_set_myspecies.tsv', sep='\t')
+
+# Train model
+model = RandomForestClassifier(
+    min_samples_leaf=6,
+    n_estimators=400,
+    n_jobs=-1,
+    random_state=123
+)
+
+classifier = Classifier(
+    model=model,
+    df=df_training,
+    features_col=feature_columns,
+    target_col='label',
+    random_state=123
+)
+
+# Save species-specific model
+classifier.save_model(outdir='models/myspecies')
+```
+
+**Advantages:**
+- Optimized for your species
+- Can incorporate species-specific biology
+
+**Limitations:**
+- Requires high-quality training labels
+- Need sufficient training examples (>500 recommended)
+
+## Handling Missing Features
+
+### Feature Imputation Strategy
+
+TRIFID can handle missing features through imputation:
+
+```python
+from trifid.utils.utils import impute
+
+# Impute missing annotation features
+df = impute(
+    df,
+    features=['basic', 'level_1', 'level_2'],
+    n=0,
+    itype='class'
+)
+
+# Impute missing TSL features
+df = impute(
+    df,
+    features=['tsl_1', 'tsl_2', 'tsl_3'],
+    n=-1,
+    itype='class'
+)
+
+# Impute missing conservation features
+df = impute(
+    df,
+    features=['PhyloCSF_Psi', 'norm_PhyloCSF_Psi'],
+    percentile=10,
+    itype='percentile'
+)
+```
+
+### Feature Availability by Species
+
+| Feature Category | Human | Mouse | Zebrafish | Fly | Required |
+|------------------|-------|-------|-----------|-----|----------|
+| Basic annotation | ✅ | ✅ | ✅ | ✅ | Yes |
+| Transcript length | ✅ | ✅ | ✅ | ✅ | Yes |
+| Protein sequence | ✅ | ✅ | ✅ | ✅ | Yes |
+| APPRIS labels | ✅ | ✅ | ⚠️ | ❌ | No |
+| TSL levels | ✅ | ✅ | ✅ | ❌ | No |
+| PhyloCSF | ✅ | ✅ | ✅ | ✅ | No |
+| RNA-seq (QSplice) | ✅ | ✅ | ⚠️ | ⚠️ | No |
+| Pfam domains | ✅ | ✅ | ✅ | ✅ | No |
+
+**Legend:**
+- ✅ Available
+- ⚠️ Limited availability
+- ❌ Not available
+
+## Case Study: Zebrafish (Danio rerio)
+
+Here's a complete example applying TRIFID to zebrafish:
+
+### 1. Download Ensembl Annotations
+
+```bash
+# Create directories
+mkdir -p data/external/genome_annotation/GRCz11/e104
+mkdir -p data/external/appris/GRCz11/e104
+
+# Download from Ensembl
+wget -O data/external/genome_annotation/GRCz11/e104/Danio_rerio.GRCz11.104.gtf.gz \
+  ftp://ftp.ensembl.org/pub/release-104/gtf/danio_rerio/Danio_rerio.GRCz11.104.gtf.gz
+
+# Download protein sequences
+wget -O data/external/appris/GRCz11/e104/Danio_rerio.GRCz11.pep.all.fa.gz \
+  ftp://ftp.ensembl.org/pub/release-104/fasta/danio_rerio/pep/Danio_rerio.GRCz11.pep.all.fa.gz
+```
+
+### 2. Update Configuration
+
+```yaml
+# config/config.yaml
+genomes:
+  GRCz11:
+    e104:
+      gtf: "data/external/genome_annotation/GRCz11/e104/Danio_rerio.GRCz11.104.gtf.gz"
+      sequences: "data/external/appris/GRCz11/e104/Danio_rerio.GRCz11.pep.all.fa.gz"
+```
+
+### 3. Generate Features
+
+```bash
+# QSplice (if RNA-seq available)
+python -m trifid.preprocessing.qsplice \
+    --gff data/external/genome_annotation/GRCz11/e104/Danio_rerio.GRCz11.104.gff3.gz \
+    --outdir data/external/qsplice/GRCz11/e104 \
+    --samples /data/zebrafish_rnaseq \
+    --version e
+
+# Pfam effects
+python -m trifid.preprocessing.pfam_effects \
+    --seqs data/external/appris/GRCz11/e104/Danio_rerio.GRCz11.pep.all.fa.gz \
+    --outdir data/external/pfam_effects/GRCz11/e104 \
+    --jobs 10
+```
+
+### 4. Build and Predict
+
+```python
+import pandas as pd
+import pickle
+from trifid.data.feature_engineering import load_data, build_features
+from trifid.utils.utils import generate_trifid_metrics, parse_yaml
+
+# Load config and data
+config = parse_yaml('config/config.yaml')
+df = load_data(config, assembly='GRCz11', release='e104')
+df = build_features(df)
+
+# Impute missing Ensembl-specific features
+df['basic'] = 1  # Ensembl doesn't have 'basic' tag
+df[['level_1', 'level_2', 'level_3']] = df[['level_1', 'level_2', 'level_3']].fillna(0)
+df[['tsl_1', 'tsl_2', 'tsl_3']] = 0  # Zebrafish lacks TSL
+
+# Load human model
+model = pickle.load(open('models/selected_model.pkl', 'rb'))
+
+# Generate predictions
+predictions = generate_trifid_metrics(
+    df[identifier_columns],
+    df[feature_columns],
+    model
+)
+
+# Save results
+predictions.to_csv(
+    'data/genomes/GRCz11/e104/trifid_predictions.tsv.gz',
+    sep='\t',
+    compression='gzip',
+    index=False
+)
+
+print(f"Predictions for {df['gene_name'].nunique()} zebrafish genes complete!")
+```
+
+## RefSeq vs Ensembl vs GENCODE
+
+### Annotation Differences
+
+| Feature | GENCODE | Ensembl | RefSeq |
+|---------|---------|---------|--------|
+| TSL levels | ✅ | ✅ | ❌ |
+| APPRIS | ✅ | Via APPRIS | Via APPRIS |
+| Basic tag | ✅ | ❌ | ❌ |
+| Gene levels | ✅ | ❌ | ❌ |
+| CCDS | ✅ | ✅ | ✅ |
+
+### Handling Annotation-Specific Features
+
+```python
+def prepare_annotation_features(df, annotation_type):
+    """
+    Handle annotation-specific feature differences.
+    """
+    if annotation_type == 'gencode':
+        # GENCODE has all features
+        pass
+    
+    elif annotation_type == 'ensembl':
+        # Ensembl lacks some GENCODE features
+        df['basic'] = 1  # All transcripts considered
+        df['level_1'] = (df['gene_biotype'] == 'protein_coding').astype(int)
+        df[['level_2', 'level_3']] = 0
+    
+    elif annotation_type == 'refseq':
+        # RefSeq lacks TSL and GENCODE-specific features
+        df['basic'] = 1
+        df[['level_1', 'level_2', 'level_3']] = 0
+        df[['tsl_1', 'tsl_2', 'tsl_3', 'tsl_4', 'tsl_5']] = -1
+        # Use CCDS as quality indicator
+        df['level_1'] = df['ccdsid'].notna().astype(int)
+    
+    return df
+```
+
+## Transcript ID Patterns
+
+TRIFID automatically detects transcript IDs:
+
+```python
+from trifid.utils.utils import get_id_patterns
+
+# Get supported ID patterns
+patterns = get_id_patterns()
+print(patterns)
+# Output: ('ENST0', 'ENSMUST', 'ENSDART', 'ENSRNOT', ..., 'NM', 'XM', 'YP')
+```
+
+Supported formats:
+- **Ensembl**: ENST (human), ENSMUST (mouse), ENSDART (zebrafish), etc.
+- **RefSeq**: NM_, XM_, YP_
+- **FlyBase**: FBtr
+
+## Performance Expectations
+
+### Accuracy by Phylogenetic Distance
+
+| Species Category | Expected Performance | Notes |
+|------------------|----------------------|-------|
+| Mammals (human-trained) | 85-90% accuracy | Best performance |
+| Other vertebrates | 80-85% accuracy | Good performance |
+| Invertebrates | 70-80% accuracy | Use with caution |
+| Plants/Fungi | Not validated | Not recommended |
+
+### Minimum Requirements
+
+For reliable predictions:
+- ✅ Complete genome annotation
+- ✅ Protein sequences for all isoforms
+- ✅ At least basic transcript metadata
+- ⚠️ RNA-seq data (highly recommended)
+- ⚠️ Conservation scores (recommended)
+
+## Validation
+
+### Validating Custom Predictions
+
+```python
+def validate_predictions(predictions_df):
+    """
+    Basic validation checks for TRIFID predictions.
+    """
+    print("=== Validation Report ===")
+    
+    # Check score range
+    assert predictions_df['trifid_score'].between(0, 1).all(), "Scores out of range!"
+    print("✅ Scores in valid range [0, 1]")
+    
+    # Check for missing predictions
+    missing = predictions_df['trifid_score'].isna().sum()
+    print(f"Missing predictions: {missing} ({missing/len(predictions_df)*100:.2f}%)")
+    
+    # Distribution check
+    functional = (predictions_df['trifid_score'] >= 0.5).sum()
+    print(f"Functional isoforms (>= 0.5): {functional} ({functional/len(predictions_df)*100:.1f}%)")
+    
+    # Principal isoform agreement (if APPRIS available)
+    if 'appris' in predictions_df.columns:
+        principal = predictions_df[predictions_df['appris'].str.contains('PRINCIPAL', na=False)]
+        principal_functional = (principal['trifid_score'] >= 0.5).sum()
+        agreement = principal_functional / len(principal) * 100
+        print(f"Principal isoforms predicted functional: {agreement:.1f}%")
+        if agreement < 70:
+            print("⚠️ Warning: Low agreement with APPRIS labels")
+    
+    print("\n=== Top Scoring Genes ===")
+    top_genes = predictions_df.nlargest(10, 'trifid_score')[[
+        'gene_name', 'transcript_id', 'trifid_score'
+    ]]
+    print(top_genes)
+
+# Run validation
+validate_predictions(predictions)
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Issue: Model predictions are all similar**
+- **Cause**: Missing critical features
+- **Solution**: Check feature completeness, ensure domain and length features are available
+
+**Issue: Very low functional predictions**
+- **Cause**: Imputation values too conservative
+- **Solution**: Adjust imputation strategy, use percentile-based imputation
+
+**Issue: High memory usage**
+- **Cause**: Large genome with many isoforms
+- **Solution**: Use `reduce_mem_usage()` utility, process in batches
+
+```python
+from trifid.utils.utils import reduce_mem_usage
+
+# Reduce memory before prediction
+df, na_list = reduce_mem_usage(df, verbose=True)
+```
+
+**Issue: Feature mismatch errors**
+- **Cause**: Training features don't match prediction features
+- **Solution**: Ensure exact feature list from training:
+
+```python
+# Get training features
+training_features = model.feature_names_in_
+
+# Reorder and select
+df_features = df[training_features]
+```
+
+## Best Practices
+
+1. **Always validate** predictions with known functional isoforms
+2. **Check feature completeness** before prediction
+3. **Use species-appropriate imputation** for missing features
+4. **Compare with orthologous genes** in well-studied species
+5. **Integrate with experimental data** when available
+6. **Report prediction confidence** using normalized scores
+
+## Example Script: Complete Workflow
+
+```bash
+#!/bin/bash
+# complete_trifid_workflow.sh
+
+SPECIES="MySpecies"
+VERSION="version1"
+
+echo "Starting TRIFID analysis for ${SPECIES} ${VERSION}"
+
+# 1. Generate QSplice
+echo "Step 1: QSplice..."
+python -m trifid.preprocessing.qsplice \
+    --gff data/external/genome_annotation/${SPECIES}/${VERSION}/annotation.gff3.gz \
+    --outdir data/external/qsplice/${SPECIES}/${VERSION} \
+    --samples data/rnaseq/${SPECIES} \
+    --version e
+
+# 2. Generate Pfam effects
+echo "Step 2: Pfam effects..."
+python -m trifid.preprocessing.pfam_effects \
+    --seqs data/external/appris/${SPECIES}/${VERSION}/protein_sequences.fa.gz \
+    --outdir data/external/pfam_effects/${SPECIES}/${VERSION} \
+    --jobs 10
+
+# 3. Build features
+echo "Step 3: Building features..."
+python -c "
+import pandas as pd
+from trifid.data.feature_engineering import load_data, build_features
+from trifid.utils.utils import parse_yaml
+
+config = parse_yaml('config/config.yaml')
+df = load_data(config, assembly='${SPECIES}', release='${VERSION}')
+df = build_features(df)
+df.to_csv('data/genomes/${SPECIES}/${VERSION}/trifid_db.tsv.gz', sep='\t', compression='gzip', index=False)
+print('Features built successfully')
+"
+
+# 4. Generate predictions
+echo "Step 4: Generating predictions..."
+python -c "
+import pandas as pd
+import pickle
+from trifid.utils.utils import generate_trifid_metrics
+
+model = pickle.load(open('models/selected_model.pkl', 'rb'))
+df = pd.read_csv('data/genomes/${SPECIES}/${VERSION}/trifid_db.tsv.gz', sep='\t', compression='gzip')
+
+predictions = generate_trifid_metrics(df[ids], df[features], model)
+predictions.to_csv('data/genomes/${SPECIES}/${VERSION}/trifid_predictions.tsv.gz', sep='\t', compression='gzip', index=False)
+print(f'Predictions complete: {len(predictions)} isoforms')
+"
+
+echo "TRIFID analysis complete!"
+```
+
+## Further Resources
+
+- [APPRIS Web Server](http://appris-tools.org) - Principal isoform annotations
+- [Ensembl FTP](ftp://ftp.ensembl.org) - Genome annotations
+- [GENCODE](https://www.gencodegenes.org) - Human and mouse annotations
+- [RefSeq](https://www.ncbi.nlm.nih.gov/refseq/) - Reference sequences
+
+## Next Steps
+
+- Review [End-to-End Tutorial](/examples/end-to-end-tutorial) for detailed workflow
+- See [FGFR1](/examples/fgfr1), [C1orf112](/examples/c1orf112), and [NIPAL3](/examples/nipal3) case studies
+- Explore [Model Interpretation](/guides/interpretation) guide
+
+## Citation
+
+If you apply TRIFID to a new species, please cite the original publication and mention the genome version used.

@@ -1,0 +1,199 @@
+---
+title: 'FGFR1 Case Study'
+description: 'Analyzing Fibroblast Growth Factor Receptor 1 isoforms with TRIFID'
+---
+
+# FGFR1: Fibroblast Growth Factor Receptor 1
+
+[ENSG00000077782](https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000077782;r=8:38400215-38468834) (Ensembl) - [P11362 (FGFR1_HUMAN)](http://www.rcsb.org/pdb/protein/P11362) (UniProt)
+
+## Overview
+
+Fibroblast Growth Factor Receptor 1 (FGFR1) is a receptor tyrosine kinase that plays crucial roles in cell proliferation, differentiation, and migration. This case study demonstrates how TRIFID evaluates the functional importance of FGFR1 splice isoforms.
+
+## Loading TRIFID Predictions
+
+To analyze FGFR1 isoforms, load the TRIFID predictions for GENCODE 27:
+
+```python
+import pandas as pd
+
+# Load predictions
+predictions = pd.read_csv(
+    'data/genomes/GRCh38/g27/trifid_predictions.tsv.gz', 
+    compression='gzip', 
+    sep='\t'
+)
+
+# Filter for FGFR1
+gene_name = 'FGFR1'
+fgfr1_data = predictions.loc[
+    predictions['gene_name'] == gene_name
+][
+    ['transcript_id', 'gene_name', 'trifid_score', 'norm_trifid_score', 
+     'appris', 'length', 'sequence']
+]
+
+print(fgfr1_data)
+```
+
+## FGFR1 Isoform Analysis
+
+### Isoform Results
+
+| Gene name | Transcript ID    | APPRIS Label  | Length (aa) | TRIFID Score | TRIFID Score (normalized) |
+|-----------|------------------|---------------|-------------|--------------|---------------------------|
+| FGFR1     | ENST00000447712  | PRINCIPAL:3   | 822         | 0.87         | 0.99                      |
+| FGFR1     | ENST00000356207  | MINOR         | 733         | 0.60         | 0.69                      |
+| FGFR1     | ENST00000397103  | MINOR         | 733         | 0.01         | 0.08                      |
+| FGFR1     | ENST00000619564  | MINOR         | 228         | 0.00         | 0.01                      |
+
+### Key Findings
+
+1. **Principal Isoform (ENST00000447712)**
+   - TRIFID score: 0.87 (high confidence functional)
+   - Normalized score: 0.99 (highest among gene isoforms)
+   - Length: 822 amino acids
+   - Agrees with APPRIS PRINCIPAL annotation
+
+2. **Alternative Isoform (ENST00000356207)**
+   - TRIFID score: 0.60 (moderate functional confidence)
+   - Normalized score: 0.69
+   - May represent a functional alternative with different regulatory properties
+
+3. **Low-scoring Isoforms**
+   - ENST00000397103 and ENST00000619564 show very low TRIFID scores
+   - Likely non-functional or degraded transcripts
+
+## Interpretation with SHAP
+
+TRIFID provides local interpretability using SHAP (SHapley Additive exPlanations) values to explain individual predictions.
+
+### Loading SHAP Predictions
+
+```python
+from trifid.models.interpret import TreeInterpretation
+import pickle
+
+# Load model
+model = pickle.load(open('models/selected_model.pkl', 'rb'))
+
+# Load training data
+df_training = pd.read_csv(
+    'data/model/training_set_final.g27.tsv.gz', 
+    sep='\t', 
+    compression='gzip'
+)
+
+# Create interpretation object
+interpretation = TreeInterpretation(
+    model=model,
+    df=df_training,
+    features_col=training_features,
+    target_col='label',
+    random_state=123,
+    test_size=0.25
+)
+
+# Explain specific isoform
+explanation = interpretation.local_explanation(
+    df_predictions, 
+    sample='ENST00000356207'
+)
+print(explanation.head(10))
+```
+
+### Example SHAP Output
+
+The SHAP waterfall plot shows which features contribute most to the prediction for ENST00000356207:
+
+- **Positive contributors** (pushing score higher):
+  - Length delta score
+  - PhyloCSF conservation score
+  - APPRIS structural features
+  - RNA-seq expression evidence
+
+- **Negative contributors** (pushing score lower):
+  - Transcript Support Level (TSL)
+  - Domain completeness
+  - Pfam domain integrity
+
+## Biological Context
+
+### FGFR1 Function
+
+FGFR1 is involved in:
+- Embryonic development
+- Angiogenesis
+- Wound healing
+- Cell survival signaling
+
+### Clinical Relevance
+
+FGFR1 alterations are associated with:
+- Various cancers (e.g., breast, lung)
+- Skeletal disorders
+- Developmental syndromes
+
+Understanding which isoforms are functional is critical for:
+- Interpreting genetic variants
+- Designing targeted therapies
+- Understanding disease mechanisms
+
+## Visualization
+
+The TRIFID paper includes a figure showing:
+- Exon structure of each FGFR1 isoform
+- TRIFID scores mapped to isoform structure
+- Domain architecture differences
+- Expression evidence across tissues
+
+<Note>
+  The principal isoform (ENST00000447712) maintains full receptor structure including the tyrosine kinase domain, explaining its high TRIFID score.
+</Note>
+
+## Running Your Own Analysis
+
+To analyze FGFR1 or any gene of interest:
+
+```python
+def analyze_gene(gene_name, predictions_file):
+    """
+    Analyze TRIFID predictions for a specific gene.
+    
+    Args:
+        gene_name: Gene symbol (e.g., 'FGFR1')
+        predictions_file: Path to TRIFID predictions
+    
+    Returns:
+        DataFrame with isoform analysis
+    """
+    df = pd.read_csv(predictions_file, sep='\t', compression='gzip')
+    
+    gene_data = df[
+        df['gene_name'] == gene_name
+    ].sort_values('trifid_score', ascending=False)
+    
+    print(f"\nAnalysis for {gene_name}:")
+    print(f"Total isoforms: {len(gene_data)}")
+    print(f"Functional (score >= 0.5): {(gene_data['trifid_score'] >= 0.5).sum()}")
+    print(f"\nTop isoform: {gene_data.iloc[0]['transcript_id']}")
+    print(f"Score: {gene_data.iloc[0]['trifid_score']:.2f}")
+    
+    return gene_data
+
+# Run analysis
+fgfr1_analysis = analyze_gene('FGFR1', 'data/genomes/GRCh38/g27/trifid_predictions.tsv.gz')
+```
+
+## References
+
+- [TRIFID Publication (NAR Genomics and Bioinformatics, 2021)](https://academic.oup.com/nargab/article/3/2/lqab044/6281449)
+- [FGFR1 on UniProt](https://www.uniprot.org/uniprot/P11362)
+- [FGFR1 on Ensembl](https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000077782)
+
+## Next Steps
+
+- Explore the [C1orf112 case study](/examples/c1orf112) for QSplice module analysis
+- See [NIPAL3 example](/examples/nipal3) for Pfam effects
+- Review [interpretation methods](/guides/interpretation) for SHAP analysis

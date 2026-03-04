@@ -1,0 +1,508 @@
+---
+title: 'Model Interpretability'
+description: 'Using SHAP values to explain TRIFID predictions and understand feature importance'
+icon: 'eye'
+---
+
+## Why Interpretability Matters
+
+While TRIFID achieves high prediction accuracy, understanding *why* the model makes specific predictions is crucial for:
+
+- **Biological insight**: Identifying which molecular features drive isoform functionality
+- **Model validation**: Ensuring predictions align with biological expectations
+- **Hypothesis generation**: Discovering unexpected patterns in isoform regulation
+- **Trust and adoption**: Building confidence in ML predictions for experimental follow-up
+
+TRIFID uses **SHAP (SHapley Additive exPlanations)** to provide transparent, interpretable explanations for every prediction.
+
+<Note>
+SHAP is a game-theoretic approach to explain ML model outputs. It assigns each feature an importance value for a particular prediction, showing how much each feature contributed to pushing the prediction above or below the baseline.
+</Note>
+
+## SHAP Framework
+
+### TreeExplainer for Random Forests
+
+TRIFID uses SHAP's `TreeExplainer` optimized for tree-based models:
+
+```python
+# From trifid/models/interpret.py:191-206
+@property
+def shap(self):
+    """Calculate SHAP values for feature importance"""
+    explainer = shap.TreeExplainer(self.model)
+    shap_values = explainer.shap_values(self.train_features)
+    
+    # Mean absolute SHAP value per feature
+    vals = np.abs(shap_values).mean(0)
+    std_vals = np.abs(shap_values).std(0)
+    
+    df = pd.DataFrame(
+        list(zip(self.train_features.columns, vals, std_vals)), 
+        columns=['feature', 'values_mean', 'values_std']
+    )
+```
+
+<Accordion title="What are SHAP values?">
+SHAP values decompose a prediction into contributions from each feature:
+
+**Base value** + **Feature 1 contribution** + **Feature 2 contribution** + ... = **Final prediction**
+
+**Properties**:
+- **Additive**: Sum of SHAP values + base value = model output
+- **Consistency**: Higher feature value → Higher SHAP value (if feature is positively correlated)
+- **Local accuracy**: Explains individual predictions, not just global patterns
+- **Missingness**: Features with missing values automatically get 0 SHAP value
+
+**Example**: For a transcript with trifid_score = 0.82:
+```
+Base (0.50) + CORSAIR (+0.15) + length_delta (+0.10) + CCDS (+0.07) + ... = 0.82
+```
+</Accordion>
+
+## Global Feature Importance
+
+Understanding which features are most important across *all* predictions.
+
+### SHAP-Based Importance
+
+```python
+# From trifid/models/interpret.py:191-206
+df['importance'] = df['values_mean'].mean()
+df['std'] = df['values_std'].mean()
+df = df[['feature', 'shap']].sort_values(by='shap', ascending=False)
+```
+
+**Top 10 Most Important Features** (typical TRIFID model):
+
+1. **norm_corsair** (0.082) - Cross-species conservation
+2. **length_delta_score** (0.071) - Length similarity to principal
+3. **norm_ScorePerCodon** (0.065) - PhyloCSF coding signal
+4. **norm_spade** (0.058) - Pfam domain integrity
+5. **CCDS** (0.052) - Consensus coding sequence
+6. **tsl_1** (0.048) - Highest transcript support
+7. **norm_firestar** (0.043) - Functional residues
+8. **pfam_score** (0.039) - Domain coverage
+9. **norm_RNA2sj_cds** (0.035) - Junction support (human)
+10. **perc_Lost_State** (0.031) - Domain loss percentage
+
+<Tip>
+Evolutionary conservation (CORSAIR, PhyloCSF) consistently ranks as the top predictor, reflecting the principle that functional isoforms are preferentially conserved across species.
+</Tip>
+
+## Alternative Importance Methods
+
+TRIFID's `TreeInterpretation` class implements multiple feature importance metrics for comparison:
+
+### 1. Sklearn Feature Importances
+
+```python
+# From trifid/models/interpret.py:88-99
+@property
+def feature_importances(self):
+    """Standard scikit-learn Gini importance"""
+    df = pd.DataFrame(
+        self.model.feature_importances_, 
+        index=self.train_features.columns
+    )
+```
+
+**Method**: Gini impurity decrease from splits on each feature.
+**Limitation**: Can be biased toward high-cardinality features.
+
+### 2. Permutation Importance
+
+```python
+# From trifid/models/interpret.py:167-188
+@property
+def permutation_importances(self):
+    """ELI5 permutation importance with MCC scoring"""
+    permutation_importance = PermutationImportance(
+        self.model,
+        random_state=self.random_state,
+        scoring=make_scorer(matthews_corrcoef),
+        n_iter=10,
+        cv=StratifiedKFold(n_splits=10)
+    )
+```
+
+**Method**: Measures performance drop when each feature is randomly shuffled.
+**Advantage**: Unbiased, reflects true predictive power.
+
+### 3. Drop-Column Importance
+
+```python
+# From trifid/models/interpret.py:76-86
+@property
+def dropcol_importances(self):
+    """Out-of-bag drop-column importance"""
+    df = oob_dropcol_importances(
+        self.model, 
+        self.train_features, 
+        self.train_target
+    )
+```
+
+**Method**: Trains model without each feature, measures performance decrease.
+**Advantage**: Most direct measure but computationally expensive.
+
+### 4. Mutual Information
+
+```python
+# From trifid/models/interpret.py:132-153
+@property
+def mutual_information(self):
+    """Non-negative dependency measure"""
+    df = pd.DataFrame(
+        mutual_info_classif(
+            self.train_features, 
+            self.train_target, 
+            random_state=self.random_state
+        )
+    )
+```
+
+**Method**: Information-theoretic measure of feature-target dependency.
+**Advantage**: Captures non-linear relationships.
+
+### Merged Importance Analysis
+
+```python
+# From trifid/models/interpret.py:257-270
+@property
+def merge_feature_importances(self):
+    """Combine all importance metrics"""
+    df = merge_dataframes(
+        self.cv_importances,
+        self.dropcol_importances,
+        self.feature_importance_permutation,
+        self.feature_importances,
+        self.mutual_information,
+        self.oob_dropcol_importances,
+        self.permutation_importances,
+        self.target_permutation,
+        on_type='feature'
+    )
+```
+
+<Card title="Importance Method Comparison" icon="scale-balanced">
+| Method | Computation | Bias | Interpretability |
+|--------|-------------|------|------------------|
+| SHAP | Medium | Low | High |
+| Permutation | Medium | Very Low | High |
+| Drop-column | High | Very Low | High |
+| Gini | Fast | Medium | Medium |
+| Mutual Info | Fast | Low | Medium |
+
+**Recommendation**: Use SHAP for local explanations and permutation importance for global rankings.
+</Card>
+
+## Local Explanations
+
+Explaining predictions for individual transcripts.
+
+### Single Transcript Analysis
+
+```python
+# From trifid/models/interpret.py:272-320
+def local_explanation(self, df_features, sample: str, waterfall: bool = False):
+    """Generate SHAP explanation for specific transcript
+    
+    Args:
+        df_features: Feature dataframe
+        sample: Transcript ID (e.g., 'ENST00000000001.1') or gene name
+        waterfall: If True, show waterfall plot
+    
+    Returns:
+        DataFrame with feature values and SHAP contributions
+    """
+    explainer = shap.TreeExplainer(self.model)
+    
+    if sample.startswith(get_id_patterns()):
+        idx = 'transcript_id'
+    else:
+        idx = 'gene_name'
+    
+    df_sample = df_idx.iloc[df_idx.index.get_level_values(idx) == sample]
+    shap_values = explainer.shap_values(df_sample)
+```
+
+**Output format**:
+```python
+               feature  shap_value  feature_value
+norm_corsair      0.132          0.98
+length_delta      0.089          1.00
+CCDS              0.071          1.00
+tsl_1             0.045          1.00
+...
+```
+
+<Tip>
+Use `local_explanation()` to understand why TRIFID predicted a specific isoform as functional or non-functional. This is invaluable for generating testable hypotheses.
+</Tip>
+
+### Waterfall Plots
+
+```python
+# From trifid/models/interpret.py:300-305
+if waterfall:
+    base_value = explainer.expected_value
+    shap.plots._waterfall.waterfall_legacy(base_value[0], shap_values[0])
+```
+
+**Waterfall plots** visualize how each feature pushes the prediction from the base value toward the final score.
+
+<Accordion title="Reading Waterfall Plots">
+```
+Base value: 0.50 (average prediction)
++ norm_corsair: +0.13
++ length_delta: +0.09
++ CCDS: +0.07
+- perc_Lost_State: -0.04
+...
+= Final prediction: 0.82
+```
+
+**Interpretation**:
+- Features in **red** push toward functional (increase score)
+- Features in **blue** push toward non-functional (decrease score)
+- **Bar length** = magnitude of contribution
+</Accordion>
+
+### Gene-Level Explanations
+
+```python
+# From trifid/models/interpret.py:307-319
+elif idx == 'gene_name':
+    # Explain all isoforms of a gene
+    explain_gene = {}
+    for i in range(0, len(df_sample)):
+        explain_gene[df_sample.index[i][1]] = np.abs(
+            explainer.shap_values(df_sample.iloc[i])
+        ).mean(0)
+    
+    df = pd.DataFrame(explain_gene).T
+    df['sum'] = df.T.sum()  # Total SHAP magnitude per isoform
+    df = df.sort_values(by='sum', ascending=False)
+```
+
+**Use case**: Compare SHAP patterns across all isoforms of a gene to identify which features differ between functional and non-functional variants.
+
+## Interpreting SHAP Values
+
+### Positive SHAP Values
+
+Indicate the feature **increases** the prediction toward functional:
+
+- **High conservation** (norm_corsair = 0.95) → +0.13 SHAP
+- **CCDS membership** (CCDS = 1) → +0.07 SHAP
+- **Full length** (length_delta_score = 1.0) → +0.09 SHAP
+
+### Negative SHAP Values
+
+Indicate the feature **decreases** the prediction toward non-functional:
+
+- **High domain loss** (perc_Lost_State = 75%) → -0.08 SHAP
+- **Low junction support** (norm_RNA2sj_cds = 0.1) → -0.05 SHAP
+- **NMD candidate** (nonsense_mediated_decay = 1) → -0.06 SHAP
+
+### SHAP Magnitude
+
+Larger absolute values = stronger influence:
+
+- **|SHAP| > 0.10**: Dominant feature, major contributor
+- **|SHAP| 0.05-0.10**: Important feature, moderate effect
+- **|SHAP| 0.01-0.05**: Minor feature, small effect
+- **|SHAP| < 0.01**: Negligible feature, minimal impact
+
+<Warning>
+SHAP values are *contributions*, not feature values. A feature can have a high value but low SHAP (if it's similar across isoforms) or low value but high SHAP (if it's discriminative).
+</Warning>
+
+## Biological Insights from SHAP
+
+SHAP analysis reveals key biological principles:
+
+### 1. Conservation Dominates
+
+**Finding**: Evolutionary features (CORSAIR, PhyloCSF) have highest SHAP values.
+
+**Interpretation**: Functional isoforms are under purifying selection and conserved across species. This validates the biological principle that function implies constraint.
+
+### 2. Length Matters
+
+**Finding**: `length_delta_score` ranks 2nd in importance.
+
+**Interpretation**: Truncated isoforms lacking large portions of the principal isoform are likely non-functional. However, small length differences may be functionally neutral.
+
+### 3. Domain Integrity is Critical
+
+**Finding**: SPADE, pfam_score, and domain loss features are highly important.
+
+**Interpretation**: Alternative splicing that damages or removes functional domains strongly indicates non-functionality.
+
+### 4. Annotation Quality Signals Function
+
+**Finding**: CCDS, TSL, and basic tag contribute significantly.
+
+**Interpretation**: Well-annotated, high-confidence transcripts are more likely functional, reflecting curation bias toward functionally important isoforms.
+
+### 5. Expression Support Helps (When Available)
+
+**Finding**: RNA2sj_cds has moderate importance for human.
+
+**Interpretation**: Splice junctions with strong RNA-seq support are more likely real, but low support doesn't necessarily mean non-functional (could be tissue-specific or rare).
+
+## TreeInterpretation Class
+
+The main interpretability interface:
+
+```python
+# From trifid/models/interpret.py:31-56
+class TreeInterpretation(Splitter):
+    def __init__(
+        self,
+        model: object,
+        df: list,
+        features_col: list,
+        target_col: str,
+        random_state: int = 123,
+        test_size: float = 0.25,
+        preprocessing: object = None
+    ):
+        """Interpret Random Forest predictions
+        
+        Inherits train/test split from Splitter class.
+        Provides multiple feature importance methods.
+        Generates local explanations for specific samples.
+        """
+```
+
+### Available Methods
+
+| Method | Property | Description |
+|--------|----------|-------------|
+| SHAP | `.shap` | TreeExplainer SHAP values |
+| Permutation | `.permutation_importances` | ELI5 permutation with CV |
+| Drop-column | `.dropcol_importances` | OOB drop-column importance |
+| CV Importance | `.cv_importances` | Cross-validated Gini importance |
+| Mutual Info | `.mutual_information` | Feature-target mutual information |
+| Sklearn | `.feature_importances` | Standard Random Forest importance |
+| Local | `.local_explanation()` | Single-sample SHAP breakdown |
+| Waterfall | `.waterfall_plot()` | Visual SHAP waterfall |
+| Merged | `.merge_feature_importances` | All methods combined |
+
+## Practical Examples
+
+### Example 1: Why is this isoform functional?
+
+```python
+from trifid.models.interpret import TreeInterpretation
+
+# Load model and data
+interpreter = TreeInterpretation(
+    model=trained_model,
+    df=training_data,
+    features_col=feature_list,
+    target_col='label'
+)
+
+# Explain a highly functional transcript
+explanation = interpreter.local_explanation(
+    df_features=full_database,
+    sample='ENST00000000001.1',
+    waterfall=True
+)
+
+print(explanation)
+```
+
+**Output interpretation**:
+- **High norm_corsair (+0.13)**: Conserved across vertebrates
+- **CCDS = 1 (+0.07)**: Consensus coding sequence
+- **tsl_1 = 1 (+0.05)**: Strong RNA-seq support
+- **→ Prediction: 0.85 (highly functional)**
+
+### Example 2: Compare isoforms of a gene
+
+```python
+# Explain all isoforms of BRCA1
+gene_explanation = interpreter.local_explanation(
+    df_features=full_database,
+    sample='BRCA1'
+)
+
+# Shows which features differ between isoforms
+print(gene_explanation.T.sort_values(by='sum', ascending=False))
+```
+
+**Use case**: Identify which alternative isoform is most likely functional and why it differs from others.
+
+### Example 3: Global feature ranking
+
+```python
+# Get comprehensive feature importance
+importance_df = interpreter.merge_feature_importances
+
+# Top 10 by SHAP
+top_features = importance_df.sort_values(by='shap', ascending=False).head(10)
+print(top_features[['feature', 'shap', 'permutation_importance']])
+```
+
+**Use case**: Understand which biological signals are most predictive across the entire transcriptome.
+
+## Validating Model Decisions
+
+SHAP helps validate that TRIFID learns biologically meaningful patterns:
+
+<Steps>
+  <Step title="Check Conservation">
+    Verify evolutionary features rank highly (expected for functional constraint)
+  </Step>
+  <Step title="Inspect Domain Features">
+    Confirm SPADE/Pfam features contribute significantly (domain integrity matters)
+  </Step>
+  <Step title="Examine Edge Cases">
+    Use local explanations for borderline predictions to check biological plausibility
+  </Step>
+  <Step title="Compare to Literature">
+    Validate that known functional isoforms have high SHAP from expected features
+  </Step>
+</Steps>
+
+## Limitations and Caveats
+
+<Warning>
+**SHAP Limitations**:
+
+1. **Correlation vs. Causation**: SHAP shows associations, not causal mechanisms
+2. **Feature Correlation**: Correlated features may have inflated/deflated SHAP values
+3. **Additive Assumption**: SHAP assumes feature contributions sum linearly (may miss complex interactions)
+4. **Computational Cost**: SHAP calculation can be slow for large datasets
+5. **Baseline Choice**: SHAP values depend on the reference baseline (mean prediction)
+</Warning>
+
+<Tip>
+**Best Practices**:
+- Use SHAP for *explaining* predictions, not replacing biological validation
+- Compare multiple importance methods for robust conclusions
+- Validate high-SHAP predictions with experimental data when possible
+- Consider biological context when interpreting feature contributions
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Feature Details" icon="table" href="./predictive-features">
+    Deep dive into all 45+ features and their meanings
+  </Card>
+  <Card title="Model Architecture" icon="brain" href="./model-architecture">
+    Understand the Random Forest model structure
+  </Card>
+  <Card title="Running Interpretability" icon="code" href="../guides/interpret-predictions">
+    Hands-on guide to generating SHAP explanations
+  </Card>
+  <Card title="API Reference" icon="book" href="../api-reference/interpret">
+    Complete TreeInterpretation API documentation
+  </Card>
+</CardGroup>

@@ -1,122 +1,133 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "TRIFID",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#051d44",
+    "light": "#7c97aa",
+    "dark": "#dee5e8"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/45b0fe5d-6a1e-44eb-b786-4f0fc04c5dae.png",
+  "logo": {
+    "light": "https://media.brand.dev/18344942-6bb3-4349-8801-f0f17ddc28d2.svg",
+    "dark": "https://media.brand.dev/18344942-6bb3-4349-8801-f0f17ddc28d2.svg"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/fpozoc/trifid"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/fpozoc/trifid"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/overview",
+              "concepts/model-architecture",
+              "concepts/predictive-features",
+              "concepts/interpretability"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "User Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/data-preparation",
+              "guides/training-models",
+              "guides/making-predictions",
+              "guides/interpreting-results"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "TRIFID Modules",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "modules/qsplice",
+              "modules/pfam-effects",
+              "modules/fragment-labeling"
+            ]
+          },
+          {
+            "group": "Data & Models",
+            "pages": [
+              "data/available-predictions",
+              "data/data-sources",
+              "data/pretrained-models"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Preprocessing",
             "pages": [
-              "api-reference/introduction"
+              "api/preprocessing/qsplice",
+              "api/preprocessing/pfam-effects",
+              "api/preprocessing/label-fragments"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Models",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/models/train",
+              "api/models/predict",
+              "api/models/interpret",
+              "api/models/select"
+            ]
+          },
+          {
+            "group": "Data",
+            "pages": [
+              "api/data/loaders",
+              "api/data/feature-engineering",
+              "api/data/make-dataset"
+            ]
+          },
+          {
+            "group": "Utils",
+            "pages": [
+              "api/utils/utils"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Case Studies",
+            "pages": [
+              "examples/fgfr1",
+              "examples/c1orf112",
+              "examples/nipal3"
+            ]
+          },
+          {
+            "group": "Tutorials",
+            "pages": [
+              "examples/end-to-end-tutorial",
+              "examples/custom-genome"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

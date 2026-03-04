@@ -1,0 +1,474 @@
+---
+title: 'Utils'
+description: 'Helper functions and utilities for TRIFID'
+---
+
+# Utils Module
+
+The `trifid.utils.utils` module contains convenient utility functions for data processing, feature engineering, and general operations.
+
+## Classes
+
+### Statistics
+
+A class for calculating TRIFID prediction statistics across APPRIS principal and alternative isoforms.
+
+**Constructor:**
+
+```python
+Statistics(df: list, nr: bool = False)
+```
+
+**Parameters:**
+- `df` (list): DataFrame with TRIFID predictions
+- `nr` (bool, optional): If True, removes redundant transcripts. Defaults to False.
+
+**Methods:**
+
+#### get_stats()
+
+```python
+get_stats(cutoff: float = 0.5, norm_double_check: bool = False, cutoff_feature: str = "trifid_score")
+```
+
+Returns statistics for functional and non-functional isoforms.
+
+**Returns:** DataFrame with counts and percentages for PRINCIPAL, ALTERNATIVE, and Total categories.
+
+**Example:**
+
+```python
+from trifid.utils.utils import Statistics
+import pandas as pd
+
+predictions = pd.read_csv('trifid_predictions.tsv.gz', sep='\t', compression='gzip')
+stats = Statistics(predictions)
+print(stats.get_stats())
+```
+
+---
+
+## Functions
+
+### balanced_training_set()
+
+Creates a balanced 1:1 proportion labeled training set.
+
+```python
+balanced_training_set(df: pd.DataFrame, seed: int = 1) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Labelled dataset
+- `seed` (int, optional): Random state. Defaults to 1.
+
+**Returns:** Balanced dataset
+
+**Example:**
+
+```python
+from trifid.utils.utils import balanced_training_set
+
+balanced_df = balanced_training_set(training_data, seed=123)
+```
+
+---
+
+### create_dir()
+
+Python equivalent of `mkdir -p`.
+
+```python
+create_dir(dirpath: str) -> str
+```
+
+**Parameters:**
+- `dirpath` (str): Path to create the new folder
+
+**Returns:** Absolute path of the new folder
+
+---
+
+### delta_score()
+
+Calculates delta scores for features (commonly used for length).
+
+```python
+delta_score(
+    df: pd.DataFrame, 
+    features: list, 
+    mode: str = "appris", 
+    groupby_feature: str = "gene_id"
+) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Input dataset
+- `features` (list): List of features to transform
+- `mode` (str): Mode to select the reference ('appris' or 'longest')
+- `groupby_feature` (str, optional): Feature to calculate score differences. Defaults to 'gene_id'.
+
+**Returns:** DataFrame with delta score columns added
+
+**Description:**
+
+Creates a feature that subtracts the largest feature value of isoform to the current one, then normalizes by the largest length of isoform per gene.
+
+---
+
+### fragments_correction()
+
+Corrects fragment isoform values by the homologous sequence.
+
+```python
+fragments_correction(df_iso: pd.DataFrame, features: list) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df_iso` (pd.DataFrame): Isoforms database
+- `features` (list): List of features to correct
+
+**Returns:** DataFrame with corrected feature columns
+
+---
+
+### generate_training_set()
+
+Creates a training set from GENCODE isoforms and their proteomics evidence.
+
+```python
+generate_training_set(df_features: pd.DataFrame, filepath: str) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df_features` (pd.DataFrame): TRIFID database dataset
+- `filepath` (str): Filepath to load the labeled isoforms
+
+**Returns:** Training set with labels
+
+**Example:**
+
+```python
+from trifid.utils.utils import generate_training_set
+
+training_set = generate_training_set(
+    df_features, 
+    'data/proteomics_evidence.tsv.gz'
+)
+```
+
+---
+
+### generate_trifid_metrics()
+
+Generates TRIFID scores to evaluate predictions.
+
+```python
+generate_trifid_metrics(
+    df: pd.DataFrame, 
+    features: pd.DataFrame, 
+    model: object, 
+    nmax_norm_median: bool = False
+) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Dataset to update with predictions
+- `features` (pd.DataFrame): Features for making predictions
+- `model` (object): Scikit-learn model to make predictions
+- `nmax_norm_median` (bool): Min maximum threshold in normalization. Defaults to False.
+
+**Returns:** DataFrame with TRIFID metrics (`trifid_score`, `norm_trifid_score`)
+
+**Example:**
+
+```python
+from trifid.utils.utils import generate_trifid_metrics
+import pickle
+
+model = pickle.load(open('selected_model.pkl', 'rb'))
+predictions = generate_trifid_metrics(df, features, model)
+```
+
+---
+
+### get_df_info()
+
+Gets pandas DataFrame info for logging.
+
+```python
+get_df_info(df: pd.DataFrame) -> str
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Input dataset
+
+**Returns:** Info message string
+
+---
+
+### get_id_patterns()
+
+Returns transcript identifier patterns for different species.
+
+```python
+get_id_patterns() -> tuple
+```
+
+**Returns:** Tuple with regex patterns for species-specific transcript identifiers
+
+**Supported species:**
+- Homo sapiens (ENST0)
+- Mouse (ENSMUST)
+- Danio rerio (ENSDART)
+- Rattus norvegicus (ENSRNOT)
+- Sus scrofa (ENSSSCT)
+- Pan troglodytes (ENSPTRT)
+- Gallus gallus (ENSGALT)
+- Bos taurus (ENSBTAT)
+- Drosophila melanogaster (FBtr)
+- RefSeq (NM, XM, YP)
+
+---
+
+### group_normalization()
+
+Normalizes features by group.
+
+```python
+group_normalization(
+    df: pd.DataFrame, 
+    features: list, 
+    nmax: int = 0, 
+    nmin: int = 0, 
+    groupby_feature: str = "gene_id"
+) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Input dataset
+- `features` (list): List of features to normalize
+- `nmax` (int, optional): Maximum score value. Defaults to 0.
+- `nmin` (int, optional): Minimum score value. Defaults to 0.
+- `groupby_feature` (str, optional): Feature to group by. Defaults to 'gene_id'.
+
+**Returns:** DataFrame with normalized features added (prefixed with `norm_`)
+
+---
+
+### impute()
+
+Imputes missing values in features.
+
+```python
+impute(
+    df: pd.DataFrame,
+    features: list,
+    n: int = None,
+    itype: str = "class",
+    column: str = None,
+    condition: str = None,
+    percentile: float = None,
+) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Input dataset
+- `features` (list): List of features to impute
+- `n` (int, optional): Value to impute
+- `itype` (str, optional): Type of imputation ('class', 'conditional', 'percentile', 'same_as_norm'). Defaults to 'class'.
+- `column` (str, optional): Column for conditional imputation
+- `condition` (str, optional): Condition value
+- `percentile` (float, optional): Percentile for percentile imputation
+
+**Returns:** DataFrame with imputed values
+
+---
+
+### merge_dataframes()
+
+Merges multiple DataFrames on transcript identifier.
+
+```python
+merge_dataframes(
+    *args, 
+    on_type: str = "transcript_id", 
+    how_type: str = "left", 
+    pivot_on: int = 0, 
+    nimpute: int = None
+) -> pd.DataFrame
+```
+
+**Parameters:**
+- `*args`: Variable number of DataFrames to merge
+- `on_type` (str, optional): Merge key feature. Defaults to 'transcript_id'.
+- `how_type` (str, optional): Merge method. Defaults to 'left'.
+- `pivot_on` (int, optional): Index of pivot DataFrame for left merge. Defaults to 0.
+- `nimpute` (int, optional): Value to fill NaN. Defaults to None.
+
+**Returns:** Merged DataFrame
+
+**Example:**
+
+```python
+from trifid.utils.utils import merge_dataframes
+
+merged = merge_dataframes(df1, df2, df3, on_type='transcript_id')
+```
+
+---
+
+### one_hot_encoding()
+
+One-hot encodes selected features.
+
+```python
+one_hot_encoding(df: pd.DataFrame, features: list) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Input dataset
+- `features` (list): Features to encode
+
+**Returns:** DataFrame with one-hot encoded features
+
+---
+
+### open_files()
+
+Opens both compressed and non-compressed files.
+
+```python
+open_files(filepath: str) -> object
+```
+
+**Parameters:**
+- `filepath` (str): File path
+
+**Returns:** Open file object
+
+---
+
+### parse_yaml()
+
+Parses YAML configuration files.
+
+```python
+parse_yaml(yaml_file: str) -> dict
+```
+
+**Parameters:**
+- `yaml_file` (str): Config file path in YAML format
+
+**Returns:** Dictionary with configuration data
+
+**Example:**
+
+```python
+from trifid.utils.utils import parse_yaml
+
+config = parse_yaml('config/config.yaml')
+```
+
+---
+
+### reduce_mem_usage()
+
+Reduces memory usage of pandas DataFrames.
+
+```python
+reduce_mem_usage(
+    df: pd.DataFrame, 
+    verbose: bool = False, 
+    round_float: int = False
+) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Input dataset
+- `verbose` (bool, optional): Verbosity control. Defaults to False.
+- `round_float` (int, optional): Round decimals. Defaults to False.
+
+**Returns:** Tuple of (DataFrame with reduced memory, list of NA columns)
+
+---
+
+### reorder_cols()
+
+Reorders DataFrame columns with objects first, then numerics.
+
+```python
+reorder_cols(df: pd.DataFrame) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Input DataFrame
+
+**Returns:** Reordered DataFrame
+
+---
+
+### round_df_floats()
+
+Rounds all float columns in a DataFrame.
+
+```python
+round_df_floats(df: pd.DataFrame, n: int = 4) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Input dataset
+- `n` (int, optional): Number of decimal places. Defaults to 4.
+
+**Returns:** DataFrame with rounded floats
+
+---
+
+### timer()
+
+Context manager for timing code blocks.
+
+```python
+@contextmanager
+timer(title: str)
+```
+
+**Parameters:**
+- `title` (str): Description of the timed block
+
+**Example:**
+
+```python
+from trifid.utils.utils import timer
+
+with timer("Processing data"):
+    # Your code here
+    process_data()
+```
+
+---
+
+### unity_ranger()
+
+Truncates values to range [0, 1].
+
+```python
+unity_ranger(df: pd.DataFrame, features: list) -> pd.DataFrame
+```
+
+**Parameters:**
+- `df` (pd.DataFrame): Input dataset
+- `features` (list): Features to truncate
+
+**Returns:** DataFrame with values bounded between 0 and 1
+
+**Description:**
+Values higher than 1 are set to 1, values lower than 0 are set to 0.
+
+---
+
+## See Also
+
+- [Feature Engineering](/api/data/feature-engineering)
+- [Model Training](/api/models/train)
+- [Making Predictions](/api/models/predict)

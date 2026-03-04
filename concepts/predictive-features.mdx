@@ -1,0 +1,460 @@
+---
+title: 'Predictive Features'
+description: 'Complete guide to the 45+ features used in TRIFID predictions'
+icon: 'table'
+---
+
+## Feature Categories
+
+TRIFID integrates **45+ features** spanning multiple biological dimensions to predict isoform functionality. These features are organized into seven main categories:
+
+<CardGroup cols={3}>
+  <Card title="Annotation" icon="bookmark">
+    12 features from transcript metadata
+  </Card>
+  <Card title="Evolution" icon="dna">
+    8 conservation and evolutionary scores
+  </Card>
+  <Card title="Structure" icon="cube">
+    14 protein structure and domain features
+  </Card>
+  <Card title="Splicing" icon="scissors">
+    6 alternative splicing impact features
+  </Card>
+  <Card title="Expression" icon="chart-line">
+    2 RNA-seq junction support features
+  </Card>
+  <Card title="Derived" icon="calculator">
+    Multiple normalized and delta scores
+  </Card>
+</CardGroup>
+
+<Note>
+All features are extracted from the unified TRIFID database (`trifid_db.tsv.gz`) which integrates data from APPRIS, PhyloCSF, Pfam, RNA-seq, and genome annotations.
+</Note>
+
+## Annotation Features
+
+Metadata and annotation quality indicators from GENCODE/Ensembl.
+
+### basic
+- **Description**: Simplified, high-quality subset of GENCODE annotations
+- **Type**: Binary (0/1)
+- **Source**: GENCODE Basic tag
+- **Interpretation**: 1 = transcript in the basic gene annotation set
+- **Species Support**: GRCh38, GRCm38
+
+### CCDS
+- **Description**: Consensus CDS protein set membership
+- **Type**: Binary (0/1)
+- **Source**: NCBI CCDS database
+- **Interpretation**: 1 = transcript has a CCDS identifier (high confidence)
+- **Species Support**: Cross-species (GRCh38, GRCm38, Rnor_6.0)
+- **Code**: `trifid/data/feature_engineering.py:102-109`
+
+<Accordion title="What is CCDS?">
+The Consensus Coding Sequence (CCDS) project identifies protein-coding regions that are consistently annotated across multiple genome annotation sources. CCDS transcripts are highly confident and experimentally supported.
+</Accordion>
+
+### Transcript Support Level (tsl_1 through tsl_6)
+- **Description**: Confidence in transcript structure based on RNA-seq evidence
+- **Type**: One-hot encoded (6 binary features)
+- **Categories**:
+  - **TSL 1**: All splice junctions supported by non-suspect mRNA
+  - **TSL 2**: Best supporting mRNA is suspect OR support from multiple ESTs
+  - **TSL 3**: Only support from single EST
+  - **TSL 4**: Best supporting EST is suspect
+  - **TSL 5**: No mRNA support for structure
+  - **TSL 6**: Not analyzed for support
+- **Source**: Ensembl transcript quality tags
+- **Species Support**: GRCh38, GRCm38
+- **Code**: `trifid/data/feature_engineering.py:50-73`
+
+### Annotation Level (level_1, level_2, level_3)
+- **Description**: Annotation confidence based on evidence type
+- **Type**: One-hot encoded (3 binary features)
+- **Categories**:
+  - **Level 1**: Verified loci (highest confidence)
+  - **Level 2**: Manual annotation (Havana/Ensembl)
+  - **Level 3**: Automated annotation
+- **Source**: GENCODE annotation level
+- **Species Support**: GRCh38, GRCm38
+
+### nonsense_mediated_decay
+- **Description**: Transcript likely targeted for NMD degradation
+- **Type**: Binary (0/1)
+- **Source**: Ensembl biotype annotation
+- **Interpretation**: 1 = contains premature stop codon, likely degraded
+- **Species Support**: GRCh38, GRCm38, Rnor_6.0, GRCz11
+
+### StartEnd_NF
+- **Description**: Start or end codon not found
+- **Type**: Binary (0/1)
+- **Source**: GENCODE tag
+- **Interpretation**: 1 = 5' or 3' end incomplete
+- **Species Support**: GRCh38
+
+### length
+- **Description**: Protein length in amino acids
+- **Type**: Continuous (integer)
+- **Source**: Protein FASTA sequences
+- **Range**: Typically 10-5,000+ residues
+- **Species Support**: Cross-species
+
+### length_delta_score
+- **Description**: Length similarity to principal/longest isoform
+- **Type**: Continuous (0-1)
+- **Formula**: `1 - abs((ref_length - length) / ref_length)`
+- **Interpretation**: 1.0 = same length as reference, 0.0 = maximally different
+- **Code**: `trifid/utils/utils.py:127-170`
+
+<Tip>
+**length_delta_score** captures the biological principle that functional isoforms often have similar lengths to the principal isoform, while short truncations may be non-functional.
+</Tip>
+
+## Evolution Features
+
+Conservation and evolutionary constraint signals.
+
+### CORSAIR (corsair)
+- **Description**: Cross-species conservation score
+- **Type**: Continuous (0-4)
+- **Method**: Number of vertebrate species with full-length orthologous isoform
+- **Source**: APPRIS database
+- **Interpretation**: Higher = more conserved across vertebrates
+- **Species Support**: Cross-species
+
+### norm_corsair
+- **Description**: Gene-normalized CORSAIR score
+- **Type**: Continuous (0-1)
+- **Formula**: `(corsair - min_gene) / (max(4, max_gene) - min_gene)`
+- **Interpretation**: 1.0 = highest conservation within gene
+- **Code**: `trifid/data/feature_engineering.py:35-47`
+
+### Alt-CORSAIR (corsair_alt)
+- **Description**: Oldest species with conserved isoform
+- **Type**: Continuous (0-0.25)
+- **Scale**: Bilateria (oldest) to recent vertebrates
+- **Source**: APPRIS database
+- **Species Support**: Cross-species
+
+### norm_corsair_alt
+- **Description**: Gene-normalized Alt-CORSAIR
+- **Type**: Continuous (0-1)
+- **Code**: `trifid/data/feature_engineering.py:76-92`
+
+### PhyloCSF Features
+
+PhyloCSF measures evolutionary signatures of protein-coding regions using comparative genomics.
+
+#### ScorePerCodon
+- **Description**: PhyloCSF score normalized per codon
+- **Type**: Continuous (can be negative)
+- **Method**: Log-likelihood ratio of coding vs. non-coding evolutionary model
+- **Interpretation**: Higher = stronger coding signature
+- **Species Support**: GRCh38, GRCm38
+
+#### norm_ScorePerCodon
+- **Description**: Gene-normalized ScorePerCodon
+- **Type**: Continuous (0-1)
+- **Handling**: Missing values imputed at 3rd percentile
+- **Code**: `trifid/data/feature_engineering.py:94-114`
+
+#### PhyloCSF_Psi
+- **Description**: Length-adjusted PhyloCSF score
+- **Type**: Continuous
+- **Method**: Adjusts for coding sequence length
+- **Species Support**: GRCh38, GRCm38
+
+#### norm_PhyloCSF_Psi
+- **Description**: Gene-normalized PhyloCSF_Psi
+- **Type**: Continuous (0-1)
+
+#### RelBranchLength
+- **Description**: Minimum relative branch length in phylogenetic alignment
+- **Type**: Continuous (0-1)
+- **Method**: Lowest exon-based score showing species coverage
+- **Interpretation**: Higher = better alignment quality
+- **Species Support**: GRCh38, GRCm38
+
+#### norm_RelBranchLength
+- **Description**: Gene-normalized RelBranchLength
+- **Type**: Continuous (0-1)
+
+<Warning>
+PhyloCSF features are only available for human (GRCh38) and mouse (GRCm38) assemblies. For other species, these features are imputed with -1.
+</Warning>
+
+## Structure Features
+
+Protein structure predictions from APPRIS methods.
+
+### firestar
+- **Description**: Number of functional residues detected
+- **Type**: Continuous (integer)
+- **Method**: Identifies ligand-binding and catalytic residues
+- **Source**: APPRIS firestar module
+- **Species Support**: Cross-species
+
+### norm_firestar
+- **Description**: Gene-normalized firestar score
+- **Type**: Continuous (0-1)
+- **Code**: `trifid/data/feature_engineering.py:35-47`
+
+### matador3d
+- **Description**: Exon-structure mapping score
+- **Type**: Continuous
+- **Method**: Number of exons mapping to known 3D structures
+- **Source**: APPRIS Matador3D module
+- **Species Support**: Cross-species
+
+### norm_matador3d
+- **Description**: Gene-normalized Matador3D score
+- **Type**: Continuous (0-1)
+
+### SPADE (spade)
+- **Description**: Pfam domain integrity score
+- **Type**: Continuous
+- **Method**: Sum of Pfam alignment bitscores
+- **Source**: APPRIS SPADE module
+- **Interpretation**: Higher = more complete domains
+- **Species Support**: Cross-species
+
+### norm_spade
+- **Description**: Gene-normalized SPADE score
+- **Type**: Continuous (0-1)
+
+### spade_loss
+- **Description**: Domain loss relative to principal isoform
+- **Type**: Continuous (capped at 50)
+- **Formula**: `max_gene_spade - spade`
+- **Code**: `trifid/data/feature_engineering.py:130`
+
+### norm_spade_loss
+- **Description**: Gene-normalized SPADE loss
+- **Type**: Continuous (0-1)
+- **Formula**: `1 - norm_spade_loss` (inverted)
+- **Code**: `trifid/data/feature_engineering.py:132-133`
+
+### CRASH Scores (crash_p, crash_m)
+- **Description**: Signal peptide reliability scores
+- **crash_p**: Secretory signal sequence
+- **crash_m**: Mitochondrial signal sequence
+- **Type**: Continuous
+- **Source**: APPRIS CRASH module
+- **Species Support**: Cross-species
+
+### norm_crash_p, norm_crash_m
+- **Description**: Gene-normalized CRASH scores
+- **Type**: Continuous (0-1)
+
+### THUMP (thump)
+- **Description**: Number of transmembrane helices
+- **Type**: Integer (0-10+)
+- **Source**: APPRIS THUMP module
+- **Species Support**: Cross-species
+
+### norm_thump
+- **Description**: Gene-normalized THUMP score
+- **Type**: Continuous (0-1)
+
+## Splicing Features
+
+Pfam domain impact from alternative splicing (QPfam analysis).
+
+### pfam_score
+- **Description**: Percentage of residues in intact Pfam domains
+- **Type**: Continuous (0-100)
+- **Source**: QPfam module
+- **Method**: Custom Pfam domain analysis pipeline
+- **Species Support**: Cross-species
+
+### pfam_domains_impact_score
+- **Description**: Percentage of intact Pfam domains after splicing
+- **Type**: Continuous (0-100)
+- **Source**: QPfam module
+
+### perc_Damaged_State
+- **Description**: Percentage of Pfam domains damaged by splicing
+- **Type**: Continuous (0-100)
+- **Method**: Domains partially lost or truncated
+- **Source**: QPfam module
+
+### perc_Lost_State
+- **Description**: Percentage of Pfam domains completely lost
+- **Type**: Continuous (0-100)
+- **Source**: QPfam module
+
+### norm_Lost_residues_pfam
+- **Description**: Normalized count of lost Pfam residues
+- **Type**: Continuous (0-1)
+- **Special handling**: Values < 10 residues set to 0
+- **Code**: `trifid/data/feature_engineering.py:128`
+
+### norm_Gain_residues_pfam
+- **Description**: Normalized count of gained Pfam residues
+- **Type**: Continuous (0-1)
+- **Source**: QPfam module
+
+<Accordion title="What is QPfam?">
+QPfam is a custom module that analyzes how alternative splicing affects Pfam protein domains. It identifies:
+- **Intact domains**: Fully preserved
+- **Damaged domains**: Partially truncated
+- **Lost domains**: Completely removed
+- **Gained domains**: New domains added
+
+This provides crucial information about functional consequences of splicing.
+</Accordion>
+
+## Expression Features
+
+RNA-seq splice junction support (QSplice analysis).
+
+### RNA2sj_cds
+- **Description**: Splice junction read support ratio
+- **Type**: Continuous (0-1+)
+- **Method**: Min junction reads / average CDS junction reads
+- **Source**: QSplice module analyzing GTEx RNA-seq data
+- **Interpretation**: Higher = better junction support
+- **Species Support**: GRCh38 only
+- **Code**: `trifid/data/feature_engineering.py:137-155`
+
+### norm_RNA2sj_cds
+- **Description**: Gene-normalized RNA2sj_cds
+- **Type**: Continuous (0-1)
+
+<Warning>
+RNA-seq features (RNA2sj_cds) are only available for human GRCh38. For other assemblies, these are imputed with -1.
+</Warning>
+
+<Tip>
+Low RNA2sj_cds scores may indicate:
+- Poorly supported splice junctions
+- Annotation artifacts
+- Tissue-specific or rare isoforms
+- Potential non-functional transcripts
+</Tip>
+
+## Feature Engineering
+
+TRIFID applies sophisticated transformations to raw features.
+
+### Group Normalization
+
+```python
+# From trifid/utils/utils.py:359-397
+def group_normalization(df, features, nmax=0, nmin=0, groupby_feature='gene_id'):
+    # Min-max normalization within each gene
+    df[f'norm_{feature}'] = df.groupby(groupby_feature)[feature].transform(
+        lambda x: (x - min(nmin, x.min())) / (max(nmax, x.max()) - min(nmin, x.min()))
+    )
+```
+
+**Rationale**: Captures *relative* differences between isoforms of the same gene rather than absolute scores.
+
+**Example**: A CORSAIR score of 3.5 may be high for one gene but low for another. Normalization reveals which isoform is most conserved *within its gene context*.
+
+### Delta Scoring
+
+```python
+# From trifid/utils/utils.py:127-170
+def delta_score(df, features, mode='appris'):
+    # Calculate difference from reference (APPRIS principal)
+    df[f'{feature}_reference'] = df.groupby(['gene_id'])[feature].transform('first')
+    df[f'{feature}_delta_score'] = 1 - abs(
+        (df[f'{feature}_reference'] - df[feature]) / df[f'{feature}_reference']
+    )
+```
+
+**Purpose**: Measures similarity to the principal isoform (typically the most functional).
+
+### Fragment Correction
+
+```python
+# From trifid/utils/utils.py:173-223
+def fragments_correction(df_iso, features):
+    # Adjusts scores for incomplete transcript fragments
+    # by referencing complete homologous transcripts
+```
+
+**Purpose**: Prevents fragment isoforms from receiving artificially low scores due to incompleteness.
+
+### One-Hot Encoding
+
+Categorical features (TSL, Level) are one-hot encoded:
+
+```python
+# From trifid/utils/utils.py:480-498
+def one_hot_encoding(df, features):
+    # Converts categories to binary indicator variables
+```
+
+**Example**: TSL value of "2" becomes:
+```
+tsl_1=0, tsl_2=1, tsl_3=0, tsl_4=0, tsl_5=0, tsl_6=0
+```
+
+## Missing Data Handling
+
+Different strategies for different assembly types (see `trifid/models/predict.py:32-136`):
+
+- **GRCh38 Ensembl**: Most complete, minimal imputation
+- **GRCh37**: Fill missing columns with -1
+- **RefSeq annotations**: CCDS computed from ccdsid, missing features = -1
+- **Mouse/Rat/Other species**: RNA-seq features = -1, CCDS handled separately
+- **Non-mammalian species**: More extensive imputation with -1 or 0
+
+<Card title="Imputation Strategy" icon="fill">
+- **-1**: Feature unavailable for this assembly (not missing data)
+- **0**: Biological absence (e.g., no CCDS identifier, no junction support)
+- **Percentile**: PhyloCSF features imputed at 3rd percentile
+- **Gene-level**: Fragment correction uses within-gene imputation
+</Card>
+
+## Feature Importance
+
+Top features contributing to TRIFID predictions (from SHAP analysis):
+
+1. **norm_corsair**: Cross-species conservation
+2. **length_delta_score**: Length similarity to principal
+3. **norm_ScorePerCodon**: PhyloCSF coding strength
+4. **norm_spade**: Pfam domain integrity
+5. **CCDS**: Consensus coding sequence membership
+6. **tsl_1**: Highest transcript support level
+7. **norm_firestar**: Functional residues
+8. **pfam_score**: Domain coverage
+9. **norm_RNA2sj_cds**: Junction support
+10. **perc_Lost_State**: Domain loss percentage
+
+<Note>
+See the [Interpretability](/concepts/interpretability) page for detailed SHAP analysis of feature contributions.
+</Note>
+
+## Feature Summary Table
+
+| Category | Count | Key Features |
+|----------|-------|-------------|
+| **Annotation** | 12 | CCDS, TSL, Level, basic, length |
+| **Evolution** | 8 | CORSAIR, PhyloCSF (3), RelBranchLength |
+| **Structure** | 14 | SPADE, firestar, Matador3D, CRASH, THUMP |
+| **Splicing** | 6 | Pfam domain impacts, residue gains/losses |
+| **Expression** | 2 | RNA-seq junction support |
+| **Derived** | 20+ | Normalized versions of above |
+| **TOTAL** | **45+** | |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Interpretability" icon="eye" href="./interpretability">
+    Learn how SHAP explains which features drive predictions
+  </Card>
+  <Card title="Feature Configuration" icon="gear" href="../guides/custom-features">
+    Customize feature selection for your analysis
+  </Card>
+  <Card title="Data Preparation" icon="database" href="../guides/data-preparation">
+    Prepare your own feature data
+  </Card>
+  <Card title="Model Overview" icon="diagram-project" href="./overview">
+    Back to pipeline overview
+  </Card>
+</CardGroup>

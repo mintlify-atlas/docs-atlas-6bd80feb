@@ -1,0 +1,229 @@
+---
+title: "Pretrained Models"
+description: "Download and use trained TRIFID models for splice isoform functionality prediction"
+---
+
+## Overview
+
+TRIFID provides pre-trained machine learning models that can predict the functional relevance of splice isoforms. These models have been trained on large-scale proteomics data and validated across multiple species.
+
+## Available Models
+
+### Human Model (v1)
+
+**Training Data**: GENCODE Release 27 (GRCh38.p10)
+
+**Features**: 45 predictive features
+
+**Release Date**: March 10, 2021
+
+**Download**: [TRIFID v1 Model (pickle format)](https://drive.google.com/file/d/1MNPMOqpPRA4mJZh25m3GbBfD9D7js7DM/view?usp=sharing)
+
+**Training Set**: [GENCODE 27 training data](https://drive.google.com/file/d/1E4OUEbfAGvCanhSlABiB8n-81p_Be8zi/view?usp=sharing)
+
+**Species Applicability**: Homo sapiens (human)
+
+### Enhanced Models (v2)
+
+**Training Data**: Extended proteomics evidence with additional features
+
+**Features**: 47 predictive features (2 additional features)
+
+**Release Date**: September 2022
+
+**Species Applicability**: 
+- Homo sapiens (Human-specific model)
+- Mus musculus (Mouse-specific model)
+- Other vertebrates (Vertebrates model)
+- Invertebrates (Invertebrates model)
+
+<Note>
+The v2 models include two additional features that improve prediction accuracy, particularly for minor isoforms.
+</Note>
+
+## Model Architecture
+
+TRIFID uses a **gradient boosting machine learning** approach that combines:
+
+- **Accuracy**: High-confidence predictions validated against proteomics data
+- **Interpretability**: SHAP values for feature importance and local predictions
+- **Reproducibility**: Complete training pipeline and configuration files available
+
+### Model Input Features
+
+The models use 47 predictive features across multiple categories:
+
+1. **Structural features**: Protein domain integrity (Pfam), sequence length
+2. **Conservation features**: PhyloCSF scores, ALT-Corsair evolutionary age
+3. **Expression features**: Splice junction coverage (QSplice), tissue specificity
+4. **Annotation features**: APPRIS principal isoform scores, CDS completeness
+
+For a complete feature list, see the [feature documentation](https://drive.google.com/file/d/1XvAA0tNS6AOMMptMB9K1IHm6b7likAqc/view?usp=sharing).
+
+### Model Output
+
+**TRIFID Score**: Probability (0-1) representing functional relevance
+- **0.0-0.3**: Low functional probability (likely neutral evolution)
+- **0.3-0.7**: Uncertain functional relevance
+- **0.7-1.0**: High functional probability (likely under purifying selection)
+
+## Using the Model
+
+### Loading a Pre-trained Model
+
+```python
+import pickle
+import pandas as pd
+
+# Load the model
+with open('trifid_model.pkl', 'rb') as f:
+    model = pickle.load(f)
+
+# Load predictions
+predictions = pd.read_csv(
+    'data/genomes/GRCh38/g27/trifid_predictions.tsv.gz',
+    compression='gzip',
+    sep='\t'
+)
+```
+
+### Example: Querying FGFR1 Isoforms
+
+```python
+# Select a gene to explore
+gene_name = 'FGFR1'
+
+# Filter predictions
+fgfr1_isoforms = predictions.loc[
+    predictions['gene_name'] == gene_name,
+    ['transcript_id', 'gene_name', 'trifid_score', 'appris', 'sequence']
+]
+
+print(fgfr1_isoforms)
+```
+
+**Output**:
+
+| Transcript ID | Gene Name | APPRIS Label | Length | TRIFID Score |
+|:--------------|:----------|:-------------|:-------|:-------------|
+| ENST00000447712 | FGFR1 | PRINCIPAL:3 | 822 | 0.87 |
+| ENST00000356207 | FGFR1 | MINOR | 733 | 0.60 |
+| ENST00000397103 | FGFR1 | MINOR | 733 | 0.01 |
+| ENST00000619564 | FGFR1 | MINOR | 228 | 0.00 |
+
+### Interpreting Predictions with SHAP
+
+TRIFID includes SHAP (SHapley Additive exPlanations) values for model interpretability:
+
+```python
+from trifid.models.interpret import explain_prediction
+
+# Load SHAP values
+df_shap = pd.read_csv('shap_values.tsv.gz', compression='gzip', sep='\t')
+
+# Explain a specific isoform
+explain_prediction(df_shap, model, features, 'ENST00000356207')
+```
+
+This generates a waterfall plot showing which features contribute most to the prediction for that specific isoform.
+
+## Model Training Pipeline
+
+If you want to train TRIFID on custom data or reproduce the training process:
+
+### 1. Prepare the Dataset
+
+```bash
+python -m trifid.data.make_dataset
+```
+
+This creates a complete dataset with all 47 predictive features.
+
+### 2. Train the Model
+
+```bash
+python -m trifid.model.train
+```
+
+The training script:
+- Loads the training set (proteomics-validated isoforms)
+- Performs hyperparameter optimization
+- Trains the gradient boosting model
+- Saves the model in pickle format
+
+### 3. Generate Predictions
+
+```bash
+python -m trifid.model.predict
+```
+
+Applies the trained model to all isoforms in the genome annotation.
+
+## Model Configuration
+
+The training pipeline is controlled by configuration files in the `config/` directory:
+
+- **config.yaml**: File paths and pipeline parameters
+- **features.yaml**: Feature definitions, categories, and species support
+
+## Model Performance
+
+The TRIFID model has been validated to show:
+
+- High concordance with proteomics detection
+- Predicted functional isoforms show measurable cross-species conservation
+- Exons from high-scoring isoforms are under purifying selection
+- Low-scoring isoforms show evidence of neutral evolution
+
+For detailed performance metrics, see the [original publication](https://academic.oup.com/nargab/article/3/2/lqab044/6281449).
+
+## Tutorials and Examples
+
+Comprehensive tutorials are available as Jupyter notebooks:
+
+- [Tutorial Notebook](https://github.com/fpozoc/trifid/blob/master/notebooks/01.tutorial.ipynb): End-to-end TRIFID workflow
+- [Figures Notebook](https://github.com/fpozoc/trifid/blob/master/notebooks/02.figures.ipynb): Reproduce publication figures
+
+## Model Applicability
+
+While TRIFID was developed for the human genome, the models can be applied to:
+
+<AccordionGroup>
+  <Accordion title="Human (Homo sapiens)">
+    Use the Human-specific model (v1 or v2) for GRCh37 or GRCh38 assemblies with GENCODE or RefSeq annotations.
+  </Accordion>
+  
+  <Accordion title="Mouse (Mus musculus)">
+    Use the Mouse-specific model (v2) for GRCm38 or GRCm39 assemblies with GENCODE annotations.
+  </Accordion>
+  
+  <Accordion title="Other Vertebrates">
+    Use the Vertebrates model (v2) for rat, zebrafish, chicken, chimpanzee, pig, cow, and macaque.
+  </Accordion>
+  
+  <Accordion title="Invertebrates">
+    Use the Invertebrates model (v2) for fruitfly and worm. Note that prediction accuracy may be lower due to evolutionary distance.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+For species not listed in the [available predictions](/data/available-predictions), model applicability depends on the availability of required data sources (APPRIS, PhyloCSF, etc.). Contact the developers for guidance.
+</Warning>
+
+## Citation
+
+If you use TRIFID models in your research, please cite:
+
+```bibtex
+@article{10.1093/nargab/lqab044,
+    author = {Pozo, Fernando and Martinez-Gomez, Laura and Walsh, Thomas A and 
+              Rodriguez, José Manuel and Di Domenico, Tomas and Abascal, Federico and 
+              Vazquez, Jesús and Tress, Michael L},
+    title = "{Assessing the functional relevance of splice isoforms}",
+    journal = {NAR Genomics and Bioinformatics},
+    volume = {3},
+    number = {2},
+    year = {2021},
+    doi = {10.1093/nargab/lqab044}
+}
+```

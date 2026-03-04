@@ -1,80 +1,366 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get started with TRIFID in minutes - load predictions and analyze splice isoform functionality
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+Before starting, ensure you have:
 
-### Step 1: Set up your local environment
+1. Installed TRIFID (see [Installation](/installation))
+2. Downloaded pre-computed predictions for your genome of interest
+3. Python 3.7+ with pandas installed
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Info>
+This guide uses GENCODE 27 (GRCh38) human predictions as an example. The same workflow applies to other genomes.
+</Info>
 
-### Step 2: Deploy your changes
+## Loading Predictions
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+The fastest way to get started is loading pre-computed TRIFID predictions.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+### Load Predictions for All Genes
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+```python
+import pandas as pd
 
-### Step 3: Go live
+# Load TRIFID predictions
+predictions = pd.read_csv(
+    'data/genomes/GRCh38/g27/trifid_predictions.tsv.gz',
+    compression='gzip',
+    sep='\t'
+)
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+# View first few rows
+predictions.head()
+```
 
-## Next steps
+### Understanding the Output
 
-Now that you have your docs running, explore these key features:
+The predictions file contains the following key columns:
 
-<CardGroup cols={2}>
+| Column | Description |
+|--------|-------------|
+| `gene_id` | Ensembl gene identifier |
+| `gene_name` | Gene symbol (e.g., FGFR1) |
+| `transcript_id` | Ensembl transcript identifier |
+| `translation_id` | Ensembl protein identifier |
+| `appris` | APPRIS annotation label |
+| `length` | Protein length (amino acids) |
+| `trifid_score` | Raw TRIFID score (0-1) |
+| `norm_trifid_score` | Gene-normalized score (0-1) |
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+<Tip>
+The `norm_trifid_score` is particularly useful for identifying the principal isoform within each gene.
+</Tip>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+## Example 1: Analyze a Single Gene
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+Let's examine the isoforms of **FGFR1** (Fibroblast Growth Factor Receptor 1):
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+```python
+# Select gene of interest
+gene_name = 'FGFR1'
 
-</CardGroup>
+# Filter predictions
+fgfr1_isoforms = predictions.loc[
+    predictions['gene_name'] == gene_name,
+    ['transcript_id', 'gene_name', 'appris', 'length', 'trifid_score', 'norm_trifid_score']
+].sort_values('trifid_score', ascending=False)
+
+print(fgfr1_isoforms)
+```
+
+### Expected Output
+
+```
+  transcript_id  gene_name        appris  length  trifid_score  norm_trifid_score
+  ENST00000447712    FGFR1  PRINCIPAL:3     822          0.87               0.99
+  ENST00000356207    FGFR1        MINOR     733          0.60               0.69
+  ENST00000397103    FGFR1        MINOR     733          0.01               0.08
+  ENST00000619564    FGFR1        MINOR     228          0.00               0.01
+```
+
+### Interpretation
+
+<Steps>
+  <Step title="Identify Principal Isoform">
+    **ENST00000447712** has the highest TRIFID score (0.87) and normalized score (0.99), confirming it as the functionally important isoform.
+  </Step>
+  
+  <Step title="Secondary Isoforms">
+    **ENST00000356207** has moderate scores (0.60/0.69), suggesting potential functional relevance in specific contexts.
+  </Step>
+  
+  <Step title="Low-Scoring Isoforms">
+    The other isoforms have very low scores (below 0.1), likely representing transcriptional noise or non-functional variants.
+  </Step>
+</Steps>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+TRIFID scores align well with APPRIS annotations. High-scoring isoforms typically correspond to PRINCIPAL annotations.
 </Note>
+
+## Example 2: Genome-Wide Analysis
+
+### Count Principal Isoforms per Gene
+
+```python
+# Define high-confidence threshold
+HIGH_CONFIDENCE_THRESHOLD = 0.7
+
+# Count high-scoring isoforms per gene
+high_confidence = predictions[predictions['trifid_score'] >= HIGH_CONFIDENCE_THRESHOLD]
+
+isoforms_per_gene = high_confidence.groupby('gene_name').size()
+
+print(f"Genes with 1 high-confidence isoform: {(isoforms_per_gene == 1).sum()}")
+print(f"Genes with 2+ high-confidence isoforms: {(isoforms_per_gene > 1).sum()}")
+```
+
+### Compare TRIFID with APPRIS
+
+```python
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Group by APPRIS annotation
+appris_comparison = predictions.groupby('appris')['trifid_score'].describe()
+
+print(appris_comparison)
+
+# Visualize
+sns.boxplot(data=predictions, x='appris', y='trifid_score')
+plt.xticks(rotation=45)
+plt.title('TRIFID Scores by APPRIS Annotation')
+plt.tight_layout()
+plt.show()
+```
+
+## Example 3: Load with Full Feature Matrix
+
+For advanced analysis, load the complete feature database:
+
+```python
+# Load full database with all features
+df_full = pd.read_csv(
+    'data/genomes/GRCh38/g27/trifid_db.tsv.gz',
+    compression='gzip',
+    sep='\t'
+)
+
+# View available features
+print(f"Total features: {df_full.shape[1]}")
+print(f"Total isoforms: {df_full.shape[0]}")
+
+# Examine specific gene with all features
+fgfr1_full = df_full[df_full['gene_name'] == 'FGFR1']
+print(fgfr1_full[['transcript_id', 'firestar', 'corsair', 'spade', 'RNA2sj', 'pfam_score']].head())
+```
+
+### Key Features to Explore
+
+<AccordionGroup>
+  <Accordion title="Conservation Features" icon="dna">
+    - `firestar`: Functional residue conservation
+    - `matador3d`: 3D structure conservation  
+    - `corsair`: Cross-species conservation
+    - `corsair_alt`: Alternative exon conservation
+    - `PhyloCSF_Psi`: Evolutionary coding score
+  </Accordion>
+
+  <Accordion title="Expression Features" icon="chart-line">
+    - `RNA2sj`: Splice junction coverage score
+    - `RNA2sj_cds`: CDS-specific junction coverage
+    - `norm_RNA2sj`: Gene-normalized expression
+  </Accordion>
+
+  <Accordion title="Structure Features" icon="cube">
+    - `pfam_score`: Pfam domain preservation
+    - `pfam_domains_impact_score`: Domain integrity
+    - `perc_Damaged_State`: Damaged domain percentage
+    - `perc_Lost_State`: Lost domain percentage
+  </Accordion>
+
+  <Accordion title="Annotation Features" icon="file">
+    - `tsl`: Transcript support level (1-5)
+    - `CCDS`: CCDS annotation status
+    - `basic`: GENCODE basic set membership
+    - `nonsense_mediated_decay`: NMD prediction
+  </Accordion>
+</AccordionGroup>
+
+## Example 4: Using TRIFID Modules
+
+TRIFID includes specialized modules for computing features from raw data.
+
+### Load Pre-computed Data with TRIFID Loaders
+
+```python
+from trifid.data.loaders import (
+    load_appris,
+    load_qsplice,
+    load_qpfam,
+    load_sequences
+)
+
+# Load APPRIS annotations
+df_appris = load_appris('data/external/appris/GRCh38/g27/appris_data.appris.txt')
+
+# Load QSplice scores
+df_qsplice = load_qsplice('data/external/qsplice/GRCh38/g27/qsplice.emtab2836.g27.tsv.gz')
+
+# Load Pfam effects
+df_qpfam = load_qpfam('data/external/pfam_effects/GRCh38/g27/qpfam.tsv.gz')
+
+# Load protein sequences
+df_sequences = load_sequences('data/external/appris/GRCh38/g27/appris_data.transl.fa.gz')
+
+print(f"APPRIS isoforms: {len(df_appris)}")
+print(f"QSplice scores: {len(df_qsplice)}")
+print(f"QPfam scores: {len(df_qpfam)}")
+```
+
+### Compute QSplice Scores from RNA-seq Data
+
+<Warning>
+This requires STAR RNA-seq alignment outputs (SJ.out.tab files).
+</Warning>
+
+```bash
+python -m trifid.preprocessing.qsplice \
+    --gff data/external/genome_annotation/GRCh38/g27/gencode.v27.annotation.gff3.gz \
+    --outdir data/external/qsplice/GRCh38/g27 \
+    --samples out/E-MTAB-2836/GRCh38/STAR/g27 \
+    --version g
+```
+
+### Compute Pfam Effects
+
+```bash
+python -m trifid.preprocessing.pfam_effects \
+    --appris data/external/appris/GRCh38/g27/appris_data.appris.txt \
+    --jobs 10 \
+    --seqs data/external/appris/GRCh38/g27/appris_data.transl.fa.gz \
+    --spade data/external/appris/GRCh38/g27/appris_method.spade.gtf.gz \
+    --outdir data/external/pfam_effects/GRCh38/g27
+```
+
+## Example 5: Filter by Criteria
+
+Find genes with multiple functional isoforms:
+
+```python
+# High confidence threshold
+threshold = 0.7
+
+# Find genes with multiple high-scoring isoforms
+multi_functional = predictions[
+    predictions['trifid_score'] >= threshold
+].groupby('gene_name').filter(lambda x: len(x) >= 2)
+
+# Show examples
+for gene in multi_functional['gene_name'].unique()[:5]:
+    gene_data = multi_functional[
+        multi_functional['gene_name'] == gene
+    ][['transcript_id', 'trifid_score', 'appris', 'length']]
+    print(f"\n{gene}:")
+    print(gene_data.to_string(index=False))
+```
+
+## Working with Specific Transcripts
+
+Retrieve TRIFID score for a specific transcript:
+
+```python
+# Query by transcript ID
+transcript_id = 'ENST00000447712'
+
+result = predictions[
+    predictions['transcript_id'] == transcript_id
+][['gene_name', 'transcript_id', 'trifid_score', 'norm_trifid_score', 'appris']]
+
+if not result.empty:
+    print(result.to_string(index=False))
+else:
+    print(f"Transcript {transcript_id} not found")
+```
+
+## Exporting Results
+
+Save filtered results for downstream analysis:
+
+```python
+# Export high-confidence isoforms
+high_confidence = predictions[predictions['trifid_score'] >= 0.7]
+
+high_confidence.to_csv(
+    'high_confidence_isoforms.tsv',
+    sep='\t',
+    index=False
+)
+
+print(f"Exported {len(high_confidence)} high-confidence isoforms")
+```
+
+## Interactive Analysis
+
+For interactive exploration, use the Jupyter notebook tutorial:
+
+```bash
+# Start Jupyter Lab
+jupyter lab
+
+# Open the tutorial notebook
+# notebooks/01.tutorial.ipynb
+```
+
+The tutorial covers:
+- Loading and exploring data
+- Model training and evaluation  
+- Feature importance analysis
+- SHAP value interpretation
+- Generating publication figures
+
+<Card title="Tutorial Notebook" icon="book" href="https://github.com/fpozoc/trifid/blob/master/notebooks/01.tutorial.ipynb">
+  View the complete tutorial on GitHub
+</Card>
+
+## Common Pitfalls
+
+<Warning>
+**Avoid these common mistakes:**
+
+1. **Transcript ID versions**: TRIFID uses IDs without version numbers (e.g., `ENST00000447712`, not `ENST00000447712.2`)
+2. **Missing data**: Some features may have NaN values for specific assemblies - check documentation
+3. **Score interpretation**: Don't use raw scores to compare across genes - use normalized scores
+4. **File compression**: Always use `compression='gzip'` when reading .gz files
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Advanced Usage" icon="rocket" href="/advanced">
+    Learn about model training, feature engineering, and custom predictions
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api">
+    Explore the complete TRIFID Python API
+  </Card>
+  
+  <Card title="TRIFID Modules" icon="puzzle-piece" href="/modules">
+    Deep dive into QSplice, Pfam effects, and fragment labeling
+  </Card>
+  
+  <Card title="Use Cases" icon="lightbulb" href="/examples">
+    See real-world applications and case studies
+  </Card>
+</CardGroup>
+
+## Get Help
+
+Need assistance?
+
+- Check the [GitHub Issues](https://github.com/fpozoc/trifid/issues)
+- Read the [full documentation](https://github.com/fpozoc/trifid/blob/master/README.md)
+- Contact the developers: fpozoc@gmx.com

@@ -1,0 +1,423 @@
+---
+title: 'Data Loaders'
+description: 'Load and parse genomic annotation data from various sources'
+icon: 'file-arrow-down'
+---
+
+## Overview
+
+The `loaders` module provides classes and functions for loading genomic data from various annotation sources including GENCODE, RefSeq, Ensembl, APPRIS, and specialized scoring systems.
+
+## Classes
+
+### Fasta
+
+Manage and load FASTA sequence files into pandas DataFrames.
+
+```python
+from trifid.data.loaders import Fasta
+
+f = Fasta(path=fasta_path, db=db_name)
+df_fasta = f.load
+```
+
+<ParamField path="path" type="str" required>
+  Path to the FASTA file
+</ParamField>
+
+<ParamField path="db" type="str">
+  Database name for identifier parsing
+</ParamField>
+
+**Properties:**
+- `load`: Returns a pandas DataFrame with columns `id` and `sequence`
+
+### GFF
+
+Parse GFF (General Feature Format) annotation files.
+
+```python
+from trifid.data.loaders import GFF
+
+g = GFF(path=gff_path, db="gencode")
+df_gff = g.load
+```
+
+<ParamField path="path" type="str" required>
+  Path to the GFF file
+</ParamField>
+
+<ParamField path="db" type="str">
+  Database type: `"gencode"`, `"g"`, `"gn"`, `"refseq"`, `"r"`, `"rs"`, `"uniprot"`, `"u"`, `"up"`
+</ParamField>
+
+**Properties:**
+- `load(complete=False)`: Returns parsed GFF data as pandas DataFrame
+
+### GTF
+
+Manage and parse GTF (Gene Transfer Format) annotation files.
+
+```python
+from trifid.data.loaders import GTF
+
+gtf = GTF(path=gtf_path, db="gencode")
+df_gtf = gtf.load
+```
+
+<ParamField path="path" type="str" required>
+  Path to the GTF file
+</ParamField>
+
+<ParamField path="db" type="str">
+  Database type: `"gencode"`, `"g"`, `"gn"`, `"refseq"`, `"r"`, `"rs"`, `"ensembl"`, `"e"`
+</ParamField>
+
+**Properties:**
+- `load`: Returns parsed GTF data as pandas DataFrame
+
+## Functions
+
+### load_annotation
+
+Load GTF genome annotations with parsed features and quality indicators.
+
+```python
+from trifid.data.loaders import load_annotation
+
+df = load_annotation(
+    filepath="gencode.v38.annotation.gtf.gz",
+    db="g"
+)
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to compressed GTF file (.gz format)
+</ParamField>
+
+<ParamField path="db" type="str" default="g">
+  Database type: `"g"` for GENCODE or `"e"` for Ensembl
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns including:
+- `transcript_id`: Transcript identifier (version stripped)
+- `CCDS`: Boolean for Consensus CDS annotation
+- `StartEnd_NF`: Boolean for unconfirmed start/end regions
+- `RNA_supported`: Boolean for RNA-seq support
+- `basic`: Boolean for basic transcript set membership
+- `NAGNAG`: Boolean for alternative acceptor sites
+- `readthrough`: Boolean for readthrough transcripts
+- `nonsense_mediated_decay`: Boolean for NMD transcripts
+- `level`: Annotation confidence level
+
+**Reference:**
+- [GENCODE GTF Format](https://www.gencodegenes.org/pages/data_format.html)
+- [GTF Annotation Format](https://mblab.wustl.edu/GTF22.html)
+
+---
+
+### load_appris
+
+Load APPRIS transcript annotations and functional scores.
+
+```python
+from trifid.data.loaders import load_appris
+
+df = load_appris("appris_data.appris.txt")
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to APPRIS data file from [APPRIS Web Server](http://appris.bioinfo.cnio.es)
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `gene_id`, `gene_name`: Gene identifiers
+- `transcript_id`, `translation_id`: Transcript and protein IDs
+- `ccdsid`: CCDS identifier
+- `tsl`: Transcript support level (1-5, or 6 for NA)
+- `length`: Protein length
+- `firestar`: Functional residue score
+- `matador3d`: 3D structure score
+- `corsair`: Cross-species conservation score (normalized)
+- `spade`: Domain prediction score
+- `thump`: Transmembrane/signal peptide score
+- `crash_p`, `crash_m`: Signal peptide and mitochondrial scores
+- `appris`: APPRIS annotation category
+
+**Processing:**
+- Filters for transcripts with TRANSLATION flag
+- Separates crash scores into peptide (crash_p) and mitochondrial (crash_m)
+- Normalizes corsair scores (values ≤1.5 set to 0)
+- Strips version numbers from transcript IDs
+
+**Reference:** [APPRIS Documentation](http://appris.bioinfo.cnio.es/#/help/intro)
+
+---
+
+### load_corsair_alt
+
+Load ALT-Corsair alternative transcript conservation scores.
+
+```python
+from trifid.data.loaders import load_corsair_alt
+
+df = load_corsair_alt("corsair_alt_scores.tsv.gz")
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to compressed ALT-Corsair score file
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `transcript_id`: Transcript identifier (version stripped)
+- `corsair_alt`: Alternative conservation score (NaN filled with 0)
+
+---
+
+### load_corsair_alt_exons
+
+Load ALT-CorsairExons scores aggregated by transcript.
+
+```python
+from trifid.data.loaders import load_corsair_alt_exons
+
+df = load_corsair_alt_exons("corsair_alt_exons.tsv.gz")
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to preprocessed ALT-CorsairExons file
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `transcript_id`: Transcript identifier
+- `minexon_corsair_alt`: Minimum exon conservation score per transcript
+
+**Note:** File must be preprocessed to expand multi-transcript exon annotations and aggregate by transcript.
+
+---
+
+### load_phylocsf
+
+Load PhyloCSF evolutionary conservation scores.
+
+```python
+from trifid.data.loaders import load_phylocsf
+
+df = load_phylocsf("PhyloCSF_scores.tsv.gz")
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to compressed PhyloCSF score file
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `transcript_id`: Transcript identifier (version stripped)
+- `ScorePerCodon`: Codon substitution frequency score (minimum per transcript)
+- `RelBranchLength`: Branch length estimation (minimum per transcript)
+- `PhyloCSF_Psi`: Alternative CSF representation (minimum per transcript)
+
+**Processing:**
+- Filters for exons with RelBranchLength > 0.1 and NumCodons > 3
+- Aggregates multi-exon scores by taking minimum values
+- NMD variants not included in source data
+
+**Reference:**
+- [PhyloCSF Paper](https://academic.oup.com/bioinformatics/article/27/13/i275/178183)
+- [PhyloCSF GitHub](https://github.com/mlin/PhyloCSF/wiki)
+
+---
+
+### load_qpfam
+
+Load QPfam protein domain impact scores.
+
+```python
+from trifid.data.loaders import load_qpfam
+
+df = load_qpfam("qpfam_scores.tsv.gz")
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to compressed QPfam output file
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `transcript_id`: Transcript identifier
+- `pfam_score`: Overall Pfam domain score
+- `pfam_domains_impact_score`: Domain impact quantification
+- `perc_Damaged_State`: Percentage of damaged domains
+- `perc_Lost_State`: Percentage of lost domains
+- `Lost_residues_pfam`: Number of lost Pfam residues
+- `Gain_residues_pfam`: Number of gained Pfam residues
+
+**Reference:** [QPfam Repository](https://gitlab.com/fpozoc/qpfam)
+
+---
+
+### load_qsplice
+
+Load QSplice splice junction coverage scores.
+
+```python
+from trifid.data.loaders import load_qsplice
+
+df = load_qsplice("qsplice_scores.tsv.gz")
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to compressed QSplice output file
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `transcript_id`: Transcript identifier (version stripped)
+- `RNA2sj`: RNA-seq to splice junction mapping score (capped at 1)
+- `RNA2sj_cds`: CDS-specific splice junction score (capped at 1)
+
+**Processing:**
+- Replaces "-" with NaN, fills with 0
+- Caps values >1 at 1
+
+**Reference:** [QSplice Repository](https://gitlab.com/fpozoc/qsplice)
+
+---
+
+### load_reference
+
+Load annotation type reference categories for transcript classification.
+
+```python
+from trifid.data.loaders import load_reference
+
+df = load_reference("reference_annotations.tsv.gz")
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to compressed reference annotation file
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `transcript_id`: Transcript identifier
+- `ann_type`: Annotation category
+- `transcript_ref`: Reference transcript indicator
+
+**Categories:**
+- Alternative
+- Principal
+- Alternative.NMD
+- Redundant Principal
+- Principal Duplication
+- Alternative Duplication
+- Redundant Alternative
+- Principal.RT (readthrough)
+- Principal.NMD
+- Alternative.RT
+
+---
+
+### load_sequences
+
+Load protein sequences from FASTA files.
+
+```python
+from trifid.data.loaders import load_sequences
+
+df = load_sequences("gencode.v38.pc_translations.fa.gz")
+```
+
+<ParamField path="filepath" type="str" required>
+  Path to compressed FASTA protein sequence file
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `transcript_id`: Transcript identifier (version stripped)
+- `sequence`: Protein amino acid sequence
+
+**Processing:**
+- Uses BioPython's SeqIO parser
+- Extracts transcript ID from FASTA header (pipe-delimited)
+- Strips version numbers from IDs
+
+---
+
+### load_spade
+
+Load SPADE (APPRIS domain prediction) scores from GTF format.
+
+```python
+from trifid.data.loaders import load_spade
+
+df = load_spade("appris_method.spade.gtf")
+```
+
+<ParamField path="path" type="str" required>
+  Path to SPADE GTF file from APPRIS
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with columns:
+- `seqname`, `source`, `feature`: GTF standard fields
+- `start`, `end`: Genomic coordinates
+- `score`: Domain score
+- `strand`, `frame`: Strand and reading frame
+- `transcript_id`, `gene_id`: Identifiers
+- `hmm_name`: Hidden Markov Model domain name
+- `evalue`: E-value for domain prediction
+- `pep_start`, `pep_end`: Peptide coordinates
+
+**Reference:** [APPRIS SPADE](http://apprisws.bioinfo.cnio.es/pub/current_release/datafiles/)
+
+## Complete Example
+
+```python
+from trifid.data.loaders import (
+    load_annotation,
+    load_appris,
+    load_sequences,
+    load_qpfam,
+    load_phylocsf
+)
+
+# Load genome annotations
+df_annotation = load_annotation(
+    "gencode.v38.annotation.gtf.gz",
+    db="g"
+)
+
+# Load APPRIS functional scores
+df_appris = load_appris("appris_data.appris.txt")
+
+# Load protein sequences
+df_sequences = load_sequences("gencode.v38.pc_translations.fa.gz")
+
+# Load domain scores
+df_qpfam = load_qpfam("qpfam_scores.tsv.gz")
+
+# Load evolutionary scores
+df_phylocsf = load_phylocsf("PhyloCSF_scores.tsv.gz")
+
+# Merge datasets by transcript_id
+import pandas as pd
+df_merged = df_appris.merge(df_sequences, on="transcript_id") \
+                     .merge(df_annotation, on="transcript_id") \
+                     .merge(df_qpfam, on="transcript_id", how="left") \
+                     .merge(df_phylocsf, on="transcript_id", how="left")
+```

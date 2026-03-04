@@ -1,0 +1,311 @@
+---
+title: Pfam Effects
+description: Quantifying alternative splicing impact on protein domain integrity
+---
+
+## Overview
+
+Pfam Effects is a TRIFID preprocessing module that quantifies how alternative splicing (AS) events affect protein domain integrity. By comparing alternative isoforms to a reference isoform using multiple sequence alignment (MSA), this module determines whether Pfam domains are intact, damaged, or lost.
+
+This analysis is critical for understanding the functional consequences of alternative splicing at the protein level.
+
+## Why Pfam Effects Matter
+
+Protein domains (particularly Pfam domains) are fundamental units of protein structure and function. Alternative splicing can:
+
+- **Preserve domains** - Retain full functional capability
+- **Damage domains** - Partial loss of residues that may impair function
+- **Remove domains** - Complete loss of functional units
+- **Introduce insertions** - Add new sequences that may disrupt domain structure
+
+Pfam Effects scores help predict whether an alternative isoform is likely to produce a functional protein or represents a non-functional variant.
+
+## Command-Line Usage
+
+```bash
+python -m trifid.preprocessing.pfam_effects \
+    --appris data/appris/GRCh38/g27/appris_data.appris.txt \
+    --jobs 10 \
+    --seqs data/appris/GRCh38/g27/appris_data.transl.fa.gz \
+    --spade data/appris/GRCh38/g27/appris_method.spade.gtf.gz \
+    --outdir data/external/pfam_effects/GRCh38/g27
+```
+
+### Parameters
+
+| Parameter | Flag | Description |
+|-----------|------|-------------|
+| `--appris` | `-a` | APPRIS annotation file with isoform metadata |
+| `--seqs` | `-s` | Protein sequences in FASTA format (gzipped) |
+| `--spade` | `-p` | SPADE file with Pfam domain annotations |
+| `--outdir` | `-o` | Output directory for results |
+| `--jobs` | `-j` | Number of parallel processes for MSA |
+| `--rm` | `-r` | Remove intermediate files after completion |
+
+## Input Files
+
+### Required Inputs
+
+1. **APPRIS annotation** (`appris_data.appris.txt`)
+   - Contains isoform metadata: APPRIS labels, TSL, CCDS, etc.
+   - Used to select the reference isoform per gene
+
+2. **Protein sequences** (`appris_data.transl.fa.gz`)
+   - FASTA file with translated protein sequences
+   - Used for multiple sequence alignment
+
+3. **SPADE domain annotations** (`appris_method.spade.gtf.gz`)
+   - Pfam domain positions for each transcript
+   - Domain names, start/end positions, and scores
+
+## Output Files
+
+### Main Output: `qpfam.tsv.gz`
+
+One row per transcript with domain impact scores.
+
+**Key columns:**
+
+| Column | Description | Range |
+|--------|-------------|-------|
+| `gene_id` | Gene identifier | - |
+| `transcript_id` | Transcript identifier | - |
+| `pfam_score` | Residue-level conservation score | 0-1 |
+| `pfam_domains_impact_score` | Percentage of intact domains | 0-1 |
+| `perc_Damaged_State` | Percentage of partially damaged domains | 0-1 |
+| `perc_Lost_State` | Percentage of completely lost domains | 0-1 |
+| `Lost_residues_pfam` | Total residues lost from domains | ≥0 |
+| `Gain_residues_pfam` | Total residues added to domains | ≥0 |
+| `pfam_effects_msa` | Reference or Transcript | - |
+| `appris` | APPRIS annotation label | - |
+
+### Intermediate Files (removed with `--rm`)
+
+- `muscle/` - MSA alignments per gene
+- `spade3/` - Individual Pfam domain files per transcript
+- `Pfam_effects.tsv` - Raw Pfam effects before aggregation
+- `spade_references.tsv` - Reference isoform selection
+- `pc_translations.tsv` - Protein coding translations
+
+## How Pfam Effects Calculates Scores
+
+### Step 1: Select Reference Isoform
+
+For each gene, one isoform is selected as the reference using this priority:
+
+1. **Protein coding** status
+2. **Best SPADE score** (Pfam domain integrity)
+3. **TSL 1** (Transcript Support Level)
+4. **CCDS annotation** presence
+5. **Longest protein** sequence
+6. **Lowest CCDS number**
+7. **APPRIS PRINCIPAL** tag
+
+### Step 2: Multiple Sequence Alignment (MSA)
+
+Using MUSCLE, each alternative isoform is aligned pairwise with the reference:
+
+```
+>Reference_Transcript
+MAPKKLVVVGAGGVGKSALTIQLIQ...
+>Alternative_Transcript  
+MAPKKLVVV---GVGKSALTIQLIQ...
+```
+
+Gaps indicate insertions/deletions that may affect domain integrity.
+
+### Step 3: Quantify Domain Effects
+
+For each Pfam domain in the reference, the alignment determines:
+
+- **State:** Intact, Damaged, or Lost
+- **Event type:** Deletion, Insertion, Substitution, Terminal swap, NAGNAG, etc.
+- **Residues affected:** Count of lost/gained amino acids within the domain
+- **Identity and gap percentages** in the aligned region
+
+### Step 4: Calculate Scores
+
+#### pfam_score (Residue-level)
+
+Measures the most severely affected domain:
+
+```
+pfam_score = 1 - (worst_domain_loss / 100)
+```
+
+- **1.0** = All domains perfectly intact
+- **0.0** = At least one domain completely lost/damaged
+
+#### pfam_domains_impact_score (Domain-level)
+
+Percentage of domains that remain intact:
+
+```
+pfam_domains_impact_score = 1 - ((Damaged + Lost) / Total_Domains)
+```
+
+#### State Percentages
+
+```
+perc_Damaged_State = Damaged_Domains / Total_Reference_Domains
+perc_Lost_State = Lost_Domains / Total_Reference_Domains
+```
+
+## Example: NIPAL3
+
+### Gene: NIPA-Like Domain Containing 3 (NIPAL3)
+
+- **Ensembl:** [ENSG00000001461](https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000001461)
+- **UniProt:** [Q6P499 (NPAL3_HUMAN)](https://www.uniprot.org/uniprot/Q6P499)
+- **Pfam domain:** [Mg_trans_NIPA (PF05653)](http://pfam.xfam.org/family/Mg_trans_NIPA) - Magnesium transporter
+
+### Pfam Effects Output
+
+| Transcript ID | pfam_score | pfam_domains_impact_score | perc_Damaged | perc_Lost | Lost_residues | pfam_effects_msa |
+|---------------|------------|---------------------------|--------------|-----------|---------------|------------------|
+| ENST00000374399 | 1.00 | 1.00 | 0.00 | 0.00 | 0 | Reference |
+| ENST00000339255 | 1.00 | 1.00 | 0.00 | 0.00 | 0 | Transcript |
+| ENST00000003912 | 0.83 | 0.00 | 1.00 | 0.00 | 50 | Transcript |
+| ENST00000358028 | 0.62 | 0.00 | 1.00 | 0.00 | 112 | Transcript |
+| ENST00000432012 | 0.35 | 0.00 | 1.00 | 0.00 | 255 | Transcript |
+
+### Interpretation
+
+**ENST00000374399** (Reference)
+- Selected as reference based on APPRIS/SPADE criteria
+- All domains intact by definition
+
+**ENST00000339255**
+- Identical domain structure to reference
+- Likely a synonymous variant or very minor difference outside domains
+
+**ENST00000003912**
+- **pfam_score = 0.83**: 17% of domain residues lost
+- **Lost 50 amino acids** from the Mg_trans_NIPA domain
+- Domain is damaged but partially present
+- May retain some magnesium transport activity
+
+**ENST00000358028**
+- **pfam_score = 0.62**: 38% of domain residues lost
+- **Lost 112 amino acids** - significant deletion
+- Likely impaired or non-functional transporter
+
+**ENST00000432012**
+- **pfam_score = 0.35**: 65% of domain residues lost
+- **Lost 255 amino acids** - massive deletion
+- Almost certainly non-functional
+- Probably represents a non-coding or degraded transcript
+
+### Visual Representation
+
+The Muscle alignment shows progressive loss of the Pfam domain (green) across isoforms:
+
+```
+Reference    [====Mg_trans_NIPA_Domain====]  Length: 400 aa
+ENST00000339 [====Mg_trans_NIPA_Domain====]  Intact
+ENST00000003 [====Mg_trans_NI--========]     50 aa lost
+ENST00000358 [====Mg_tr-----------====]      112 aa lost  
+ENST00000432 [===M--------=========]         255 aa lost
+```
+
+## Interpreting Pfam Effects Scores
+
+### pfam_score Guide
+
+| Range | Interpretation |
+|-------|----------------|
+| 0.9 - 1.0 | Minimal/no domain damage; likely functional |
+| 0.7 - 0.9 | Minor domain damage; may retain partial function |
+| 0.5 - 0.7 | Moderate damage; impaired function likely |
+| 0.3 - 0.5 | Severe damage; probably non-functional |
+| 0.0 - 0.3 | Complete or near-complete domain loss; non-functional |
+
+### pfam_domains_impact_score Guide
+
+| Range | Interpretation |
+|-------|----------------|
+| 0.8 - 1.0 | Most/all domains intact |
+| 0.5 - 0.8 | Some domains affected |
+| 0.2 - 0.5 | Majority of domains affected |
+| 0.0 - 0.2 | Most/all domains lost or damaged |
+
+### Event Type Classification
+
+The module identifies specific types of splicing events:
+
+- **Deletion** - Exon skipping removes domain residues
+- **Insertion** - Exon inclusion adds residues
+- **Substitution** - Alternative exon swaps residues
+- **C/N-terminal Deletion** - Truncation at protein ends
+- **C/N-terminal Swap** - Alternative start/stop codons
+- **NAGNAG** - Single codon insertion/deletion
+- **Homology** - Alternative exons with sequence similarity
+
+## Processing Pipeline
+
+Pfam Effects performs these operations:
+
+1. **Load APPRIS annotations** and select reference isoforms
+2. **Generate MSA** using MUSCLE for each gene (parallelized)
+3. **Parse SPADE** domain annotations into per-transcript files
+4. **Run Perl script** to analyze alignments and quantify domain effects
+5. **Aggregate results** into per-transcript summary scores
+6. **Clean up** intermediate files (optional)
+
+## Integration with TRIFID
+
+Pfam Effects scores are critical TRIFID features:
+
+- `pfam_score` and `pfam_domains_impact_score` are among the most important predictors
+- Isoforms with low Pfam scores are rarely detected in proteomics
+- Combined with QSplice and conservation metrics, Pfam Effects improves functional prediction accuracy
+
+## Pre-computed Data
+
+For GENCODE 27:
+- [qpfam.tsv.gz](https://drive.google.com/file/d/1P6dra0JYng2uqW34i0eEjsi2GgHQOBte/view) - Per-transcript Pfam effects scores
+
+## Technical Notes
+
+### Performance
+
+- Processing ~20,000 genes with 10 parallel jobs: 2-4 hours
+- Memory usage: ~1-2 GB per job
+- Bottleneck: MUSCLE alignment for genes with many isoforms
+
+### Reference Selection Strategy
+
+The priority system ensures the reference represents the "most canonical" isoform:
+- Protein coding filter removes non-coding transcripts
+- SPADE score prioritizes domain completeness
+- TSL and CCDS provide experimental validation
+- Length and APPRIS tags break ties
+
+### Handling Edge Cases
+
+- **Genes with no Pfam domains**: Scores set to 1.0 (no penalty)
+- **Multiple references**: Deduplicated by sequence
+- **Lost residues < 10**: Normalized to 0 to avoid noise
+
+## Dependencies
+
+- **MUSCLE** - Multiple sequence alignment tool
+- **Perl 5** - For domain effect quantification scripts
+- **Python packages:** pandas, numpy, multiprocessing
+
+## Source Code
+
+Implementation: `trifid/preprocessing/pfam_effects.py:pfam_effects.py:1`
+
+Key functions:
+- `annotation_reference()` - Select reference isoform per gene
+- `mp_msa()` - Parallel multiple sequence alignment
+- `load_pfam()` - Parse Pfam effects from Perl script output  
+- `qpfam_effects()` - Aggregate scores per transcript
+
+## Related Concepts
+
+- **APPRIS:** Database of principal isoforms with structural/functional annotations
+- **SPADE:** APPRIS method for predicting Pfam domain annotations
+- **MUSCLE:** Fast multiple sequence alignment algorithm
+- **Pfam:** Database of protein domain families with curated alignments

@@ -1,0 +1,365 @@
+---
+title: Fragment Labeling
+description: Identifying redundant, incomplete, and duplicated protein isoforms
+---
+
+## Overview
+
+Fragment Labeling is a TRIFID preprocessing module that identifies redundant, incomplete, and duplicated protein sequences in genome annotations. This module is essential for cleaning up the isoform dataset before machine learning model training.
+
+By tagging transcripts as fragments, duplications, or complete alternatives, this module ensures that TRIFID scores are not artificially inflated or deflated by annotation artifacts.
+
+## Why Fragment Labeling Matters
+
+Genome annotations often contain:
+
+- **Incomplete sequences** - CDS start/end not found (NF = "Not Found")
+- **Fragments** - Truncated versions of longer isoforms from the same gene
+- **Duplications** - Identical protein sequences shared across multiple genes
+- **Readthrough transcripts** - Fusions of adjacent genes
+
+Without proper labeling, these artifacts can:
+- Confound functional predictions
+- Create biased training datasets
+- Misrepresent evolutionary conservation
+- Complicate interpretation of isoform importance
+
+Fragment Labeling ensures that each isoform is appropriately categorized for downstream analysis.
+
+## Command-Line Usage
+
+```bash
+python -m trifid.preprocessing.label_fragments \
+    --gtf data/genome_annotation/GRCh38/g27/gencode.v27.annotation.gtf.gz \
+    --seqs data/appris/GRCh38/g27/appris_data.transl.fa.gz \
+    --principals data/appris/GRCh38/g27/appris_data.principal.txt \
+    --outdir data/external/label_fragments/GRCh38/g27
+```
+
+### Parameters
+
+| Parameter | Flag | Description |
+|-----------|------|-------------|
+| `--gtf` | `-g` | GENCODE/Ensembl GTF annotation file (gzipped) |
+| `--seqs` | `-s` | Protein sequences in FASTA format (gzipped) |
+| `--principals` | `-p` | APPRIS principal isoforms file |
+| `--outdir` | `-o` | Output directory for results |
+| `--trifid` | `-t` | Optional: TRIFID predictions to sort APPRIS by score |
+| `--rm` | `-r` | Remove intermediate files after completion |
+
+## Input Files
+
+### Required Inputs
+
+1. **GTF annotation** (`gencode.v27.annotation.gtf.gz`)
+   - Transcript-level annotations with tags:
+     - `readthrough_transcript`
+     - `cds_start_NF` / `cds_end_NF`
+   - Transcript types (protein_coding, NMD, etc.)
+
+2. **Protein sequences** (`appris_data.transl.fa.gz`)
+   - FASTA format with gene and transcript IDs
+   - Used for sequence comparison and length calculation
+
+3. **APPRIS principals** (`appris_data.principal.txt`)
+   - List of principal isoforms (one per gene)
+   - Used to prioritize reference sequences
+
+### Optional Input
+
+4. **TRIFID predictions** (with `--trifid`)
+   - Allows sorting isoforms by predicted functional score
+   - Improves reference selection when APPRIS is ambiguous
+
+## Output Files
+
+### Main Output: `gencode.qduplications.tsv.gz`
+
+One row per transcript with redundancy labels.
+
+**Expected columns:**
+
+| Column | Description |
+|--------|-------------|
+| `gene_id` | Gene identifier |
+| `transcript_id` | Transcript identifier |
+| `sequence` | Protein sequence (amino acids) |
+| `length` | Protein length in amino acids |
+| `ann_label` | Annotation-derived label |
+| `duplication_label` | Final redundancy classification |
+| `appris` | APPRIS principal/alternative status |
+
+### Duplication Labels
+
+The module assigns one of these labels:
+
+| Label | Description |
+|-------|-------------|
+| `Principal` | APPRIS principal isoform (one per gene) |
+| `Alternative` | Complete alternative isoform |
+| `Redundant Principal` | Incomplete principal (CDS start/end NF) |
+| `Redundant Alternative` | Incomplete alternative isoform |
+| `Principal Duplication` | Principal with sequence duplicated across genes |
+| `Alternative Duplication` | Alternative with sequence duplicated across genes |
+
+### Annotation Labels
+
+Extracted from GTF tags:
+
+| ann_label | Meaning |
+|-----------|----------|
+| `readthrough` | Readthrough transcript (gene fusion) |
+| `Start NF` | CDS start not found |
+| `End NF` | CDS end not found |
+| `protein_coding` | Standard protein-coding transcript |
+| `nonsense_mediated_decay` | NMD target |
+| `IG_*` / `TR_*` | Immunoglobulin/T-cell receptor genes |
+
+### Intermediate Files (removed with `--rm`)
+
+- `appris.pc_sequences.tsv` - Protein sequences formatted for Perl processing
+- `gencode.pc_annotations.tsv` - Filtered protein-coding annotations
+- `gencode.pc_annotations.out.tsv` - Post-Perl processing annotations
+- `appris.principals.tsv` - Filtered principal isoforms
+
+## How Fragment Labeling Works
+
+### Step 1: Load and Filter Annotations
+
+From the GTF file:
+- Extract transcript-level features
+- Filter for protein-coding gene types
+- Identify transcripts with:
+  - `readthrough_transcript` tag
+  - `cds_start_NF` or `cds_end_NF` tags
+  - Transcript support levels (TSL)
+  - Transcript types (protein_coding, NMD, non_stop_decay, etc.)
+
+### Step 2: Load Protein Sequences
+
+From the FASTA file:
+- Parse gene_id, transcript_id, and sequence
+- Calculate protein length
+- Remove version suffixes if needed (e.g., ENST00000456328.2 → ENST00000456328)
+
+### Step 3: Identify APPRIS Principals
+
+Filter the principals file to retain only isoforms labeled `PRINCIPAL`.
+
+### Step 4: Calculate Sequence Lengths (Perl)
+
+Call `get_seqlen.pl` to:
+- Compute amino acid lengths for all transcripts
+- Identify incomplete sequences (NF tags)
+
+### Step 5: Identify Non-Redundant (NR) Set (Perl)
+
+Call `get_NR_list.pl` to:
+- Compare all isoforms within each gene
+- Detect fragments (shorter isoforms that are substrings of longer ones)
+- Detect duplications (identical sequences across genes)
+- Assign duplication labels based on sequence identity
+
+### Step 6: Sort by TRIFID Score (Optional)
+
+If `--trifid` is provided:
+- Merge with TRIFID predictions
+- Sort isoforms by `trifid_score` within each gene
+- Use this ordering to prioritize reference selection
+
+## Fragmentation Detection Algorithm
+
+The Perl script `get_NR_list.pl` implements these rules:
+
+### Within-Gene Comparison
+
+For each gene:
+1. Sort isoforms by length (descending)
+2. Compare each shorter isoform to longer ones
+3. If sequence is a **perfect substring**, label as fragment:
+   - If APPRIS principal → `Redundant Principal`
+   - If alternative → `Redundant Alternative`
+
+### Cross-Gene Comparison
+
+Across all genes:
+1. Compare all sequences pairwise
+2. If **identical sequences** found:
+   - Label as `Principal Duplication` or `Alternative Duplication`
+   - Retain only one copy (preferring higher APPRIS/TRIFID score)
+
+### Incomplete Sequence Handling
+
+Isoforms with NF tags:
+- Automatically labeled as `Redundant [Principal|Alternative]`
+- Excluded from training set (but retained in predictions)
+
+## Example Use Cases
+
+### Case 1: Fragment Detection
+
+**Gene EXMP1** has three isoforms:
+
+```
+ENST001 (Principal):  MATLKPVGDSEQRKKL...  (350 aa)
+ENST002 (Alternative): MATLKPVGDSEQRKKL...  (350 aa)  
+ENST003 (Alternative): MATLKPVGDSE------   (100 aa)
+```
+
+**Fragment Labeling result:**
+- ENST001 → `Principal`
+- ENST002 → `Alternative`
+- ENST003 → `Redundant Alternative` (fragment of ENST001/002)
+
+### Case 2: Duplication Detection
+
+**Gene A** and **Gene B** share identical sequences:
+
+```
+Gene A - ENST100 (Principal):  MATLKPVGDSEQRKKL...  (250 aa)
+Gene B - ENST200 (Principal):  MATLKPVGDSEQRKKL...  (250 aa)
+```
+
+**Fragment Labeling result:**
+- ENST100 → `Principal` (higher APPRIS score)
+- ENST200 → `Principal Duplication` (flagged as redundant)
+
+### Case 3: Incomplete Sequences
+
+**Gene EXMP2** has NF-tagged isoforms:
+
+```
+ENST301 (Principal):      MATLKPVGDSEQRKKL...  (cds_start_NF)
+ENST302 (Alternative):    MATLKPVGDSEQRKKL...  (complete)
+```
+
+**Fragment Labeling result:**
+- ENST301 → `Redundant Principal` (incomplete CDS)
+- ENST302 → `Alternative` (complete)
+
+## Integration with TRIFID
+
+Fragment labels are used for:
+
+### Training Set Filtering
+
+Remove from training:
+- All `Redundant *` isoforms
+- All `* Duplication` isoforms
+
+Retain only:
+- `Principal`
+- `Alternative`
+
+### Score Correction
+
+Adjust predictions for incomplete sequences:
+- Fragments receive penalty in final scoring
+- NF-tagged isoforms marked for manual review
+
+### Interpretation
+
+- Users can filter predictions to exclude redundant isoforms
+- Annotations can indicate which isoforms are likely artifacts
+
+## Pre-computed Data
+
+For GENCODE 27:
+- [gencode.qduplications.tsv.gz](https://drive.google.com/file/d/1TEEama9ZGL4vvgMgcXYNHL71eX0KjzH5/view) - Fragment labels
+
+## Technical Notes
+
+### Performance
+
+- Processing ~200,000 transcripts: ~10-30 minutes
+- Memory usage: ~1-2 GB
+- Bottleneck: Cross-gene sequence comparison (O(n²) for duplicates)
+
+### GTF Parsing
+
+Uses the `gtfparse` library:
+- Automatically extracts transcript-level features
+- Handles GENCODE/Ensembl GTF format differences
+- Supports gzipped inputs
+
+### Transcript Type Filtering
+
+Included transcript types:
+- `protein_coding`
+- `nonsense_mediated_decay`
+- `non_stop_decay`
+- `polymorphic_pseudogene`
+- `IG_*` (immunoglobulin genes)
+- `TR_*` (T-cell receptor genes)
+
+Excluded:
+- Pseudogenes
+- Processed transcripts
+- Retained introns
+- lncRNAs
+
+### Version Number Handling
+
+Ensembl/GENCODE IDs may have version suffixes (e.g., `.2`):
+- Automatically removed for consistency
+- Ensures matching across APPRIS/GENCODE datasets
+
+## Dependencies
+
+- **Perl 5** - For fragment detection scripts (`get_NR_list.pl`, `get_seqlen.pl`)
+- **Python packages:** pandas, gtfparse
+
+## Source Code
+
+Implementation: `trifid/preprocessing/label_fragments.py:label_fragments.py:1`
+
+Key functions:
+- `generate_annotations()` - Extract GTF metadata
+- `generate_sequences()` - Parse protein FASTA
+- `get_seqlen()` - Call Perl script for length calculation
+- `get_NR_list()` - Call Perl script for redundancy detection
+
+Perl utilities:
+- `trifid/utils/get_seqlen.pl` - Calculate sequence lengths
+- `trifid/utils/get_NR_list.pl` - Detect fragments and duplications
+
+## Frequently Asked Questions
+
+### Why are some principal isoforms labeled as redundant?
+
+If an APPRIS principal isoform has `cds_start_NF` or `cds_end_NF` tags, it's incomplete and flagged as `Redundant Principal`. This prevents incomplete sequences from being used as training references.
+
+### What happens to readthrough transcripts?
+
+Readthrough transcripts (gene fusions) are tagged with `readthrough` in the annotation label but not automatically excluded. These may represent genuine functional transcripts.
+
+### How are ties handled in duplication detection?
+
+When multiple isoforms have identical sequences:
+1. APPRIS label (Principal > Alternative)
+2. TRIFID score (if provided via `--trifid`)
+3. Transcript ID (lexicographic order)
+
+### Can I use this module for non-human species?
+
+Yes, as long as:
+- GTF follows GENCODE/Ensembl format
+- APPRIS annotations are available
+- The species has Pfam domain annotations
+
+## Next Steps
+
+After running Fragment Labeling:
+
+1. **Review the output:** Check duplication counts and fragment percentages
+2. **Filter for training:** Remove redundant isoforms from the training set
+3. **Run TRIFID:** Use the cleaned dataset for model training
+4. **Interpret predictions:** Consider fragment labels when interpreting scores
+
+## Related Concepts
+
+- **APPRIS:** Principal isoform annotation database
+- **GENCODE:** Comprehensive human genome annotation
+- **TSL:** Transcript Support Level (experimental validation)
+- **CCDS:** Consensus Coding Sequence project
+- **NMD:** Nonsense-Mediated Decay pathway

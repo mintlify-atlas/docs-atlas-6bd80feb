@@ -1,0 +1,313 @@
+---
+title: 'Dataset Creation'
+description: 'Build complete TRIFID datasets from genomic annotations'
+icon: 'database'
+---
+
+## Overview
+
+The `make_dataset` module provides a command-line interface and workflow for creating complete TRIFID datasets. It orchestrates data loading, feature engineering, and output generation.
+
+## Command-Line Usage
+
+Run the dataset creation pipeline directly from the command line:
+
+```bash
+python -m trifid.data.make_dataset \
+    --config config/config.yaml \
+    --features config/features.yaml \
+    --assembly GRCh38 \
+    --release g27
+```
+
+### Command-Line Arguments
+
+<ParamField path="--config" type="str" default="config/config.yaml">
+  Path to YAML configuration file containing data source paths
+</ParamField>
+
+<ParamField path="--features" type="str" default="config/features.yaml">
+  Path to YAML file specifying which features to include in final output
+</ParamField>
+
+<ParamField path="--assembly" type="str" default="GRCh38">
+  Genome assembly version (`GRCh38`, `GRCh37`, etc.)
+</ParamField>
+
+<ParamField path="--release" type="str" default="g27">
+  Annotation release identifier:
+  - GENCODE: `g27`, `g38`, etc.
+  - Ensembl: `e90`, `e104`, etc.
+  - RefSeq: `r109`, etc.
+</ParamField>
+
+## Python API
+
+### main
+
+Execute the complete dataset creation workflow.
+
+```python
+from trifid.data.make_dataset import main
+
+# Run with default arguments (or override via sys.argv)
+main()
+```
+
+**Workflow:**
+
+1. Parse command-line arguments
+2. Load configuration from YAML files
+3. Create output directory structure
+4. Initialize logging
+5. Load raw data from all sources
+6. Apply feature engineering pipeline
+7. Select specified features
+8. Save compressed output file
+
+**Output:**
+- Creates directory: `data/genomes/{assembly}/{release}/`
+- Saves dataset: `data/genomes/{assembly}/{release}/trifid_db.tsv.gz`
+- Generates log: `data/genomes/{assembly}/{release}/trifid_db.{timestamp}.log`
+
+## Configuration Files
+
+### config.yaml
+
+Defines paths to all input data sources:
+
+```yaml
+genomes:
+  GRCh38:
+    g27:
+      annotation: data/raw/gencode.v27.annotation.gtf.gz
+      appris_data: data/raw/appris_data.appris.txt
+      corsair_alt: data/raw/corsair_alt.tsv.gz
+      qpfam: data/raw/qpfam_scores.tsv.gz
+      qsplice: data/raw/qsplice_scores.tsv.gz
+      phylocsf: data/raw/PhyloCSF_scores.tsv.gz
+      reference: data/raw/qduplications.tsv.gz
+      sequences: data/raw/gencode.v27.pc_translations.fa.gz
+    g38:
+      # ... additional releases
+  GRCh37:
+    # ... additional assemblies
+```
+
+**Special Values:**
+- Use `"-"` as path value to skip a data source (empty DataFrame will be created)
+
+### features.yaml
+
+Specifies which columns to include in the final output:
+
+```yaml
+features:
+  # Identifiers
+  - transcript_id
+  - gene_id
+  - gene_name
+  
+  # Normalized scores
+  - norm_firestar
+  - norm_matador3d
+  - norm_spade
+  - norm_corsair
+  - norm_corsair_alt
+  - norm_ScorePerCodon
+  - norm_PhyloCSF_Psi
+  - norm_RNA2sj
+  - norm_RNA2sj_cds
+  - norm_Lost_residues_pfam
+  - norm_Gain_residues_pfam
+  
+  # Categorical features
+  - tsl_1
+  - tsl_2
+  - tsl_3
+  - tsl_4
+  - tsl_5
+  - level_1
+  - level_2
+  - level_3
+  
+  # Binary flags
+  - CCDS
+  - basic
+  - StartEnd_NF
+  - nonsense_mediated_decay
+  
+  # Sequence
+  - sequence
+```
+
+## Complete Example
+
+### Directory Structure
+
+```
+project/
+├── config/
+│   ├── config.yaml
+│   └── features.yaml
+├── data/
+│   ├── raw/
+│   │   ├── gencode.v27.annotation.gtf.gz
+│   │   ├── appris_data.appris.txt
+│   │   ├── corsair_alt.tsv.gz
+│   │   ├── qpfam_scores.tsv.gz
+│   │   ├── qsplice_scores.tsv.gz
+│   │   ├── PhyloCSF_scores.tsv.gz
+│   │   ├── qduplications.tsv.gz
+│   │   └── gencode.v27.pc_translations.fa.gz
+│   └── genomes/
+│       └── GRCh38/
+│           └── g27/
+│               ├── trifid_db.tsv.gz
+│               └── trifid_db.2024-01-15_10-30-00.log
+└── trifid/
+    └── data/
+        ├── __init__.py
+        ├── loaders.py
+        ├── feature_engineering.py
+        └── make_dataset.py
+```
+
+### Running the Pipeline
+
+```bash
+# Create GENCODE v27 (GRCh38) dataset
+python -m trifid.data.make_dataset \
+    --config config/config.yaml \
+    --features config/features.yaml \
+    --assembly GRCh38 \
+    --release g27
+
+# Output:
+# 2024-01-15 10:30:00 | INFO | TRIFID has started and its output will be ready in data/genomes/GRCh38/g27
+# 2024-01-15 10:30:05 | INFO | Loading GTF annotations: 199,169 transcripts
+# 2024-01-15 10:30:20 | INFO | Loading APPRIS data: 98,456 transcripts
+# 2024-01-15 10:30:25 | INFO | Loading sequences: 98,456 sequences
+# ...
+# 2024-01-15 10:35:00 | INFO | Feature engineering complete
+# 2024-01-15 10:35:10 | INFO | Dataset saved to data/genomes/GRCh38/g27/trifid_db.tsv.gz
+```
+
+### Using the Output
+
+```python
+import pandas as pd
+
+# Load processed dataset
+df = pd.read_csv(
+    "data/genomes/GRCh38/g27/trifid_db.tsv.gz",
+    sep="\t",
+    compression="gzip"
+)
+
+print(f"Dataset shape: {df.shape}")
+print(f"Features: {df.columns.tolist()}")
+
+# Filter for principal isoforms
+df_principal = df[df['ann_type'] == 'Principal']
+
+# Select high-confidence transcripts
+df_high_quality = df[
+    (df['tsl_1'] == 1) | (df['tsl_2'] == 1) &
+    (df['basic'] == 1) &
+    (df['CCDS'] == 1)
+]
+
+# Use for downstream analysis
+from trifid.models import train_model
+X = df_high_quality.filter(regex='^norm_')
+y = df_high_quality['ann_type']
+model = train_model(X, y)
+```
+
+## Programmatic Usage
+
+Instead of using the CLI, you can call the workflow programmatically:
+
+```python
+import os
+import pandas as pd
+from loguru import logger
+from trifid.utils import utils
+from trifid.data.feature_engineering import load_data, build_features
+
+# Set up configuration
+assembly = "GRCh38"
+release = "g27"
+config = utils.parse_yaml("config/config.yaml")
+df_features = pd.DataFrame(utils.parse_yaml("config/features.yaml"))
+
+# Create output directory
+data_dir = os.path.join("data", "genomes", assembly, release)
+utils.create_dir(data_dir)
+
+# Configure logging
+logger.add(os.path.join(data_dir, "trifid_db.{time}.log"))
+logger.info(f"TRIFID has started and its output will be ready in {data_dir}")
+
+# Load and process data
+df = load_data(config=config, assembly=assembly, release=release)
+df = build_features(df)
+
+# Save selected features
+selected_features = df_features.feature.values
+df[selected_features].to_csv(
+    os.path.join(data_dir, "trifid_db.tsv.gz"),
+    index=None,
+    sep="\t",
+    compression="gzip"
+)
+
+logger.info(f"Saved {len(df)} transcripts with {len(selected_features)} features")
+```
+
+## Output Format
+
+The generated `trifid_db.tsv.gz` file is a tab-separated, gzip-compressed file with:
+
+**Format:**
+- Tab-separated values (TSV)
+- Gzip compression
+- Header row with column names
+- One transcript per row
+- Version-stripped transcript IDs
+
+**Example Output:**
+
+```tsv
+transcript_id	gene_id	gene_name	norm_firestar	norm_corsair	tsl_1	basic	CCDS
+ ENST00000456328	ENSG00000223972	DDX11L1	0.85	0.92	1	1	1
+ENST00000450305	ENSG00000223972	DDX11L1	0.65	0.45	0	1	0
+ENST00000488147	ENSG00000227232	WASH7P	0.0	0.0	0	0	0
+```
+
+## Error Handling
+
+The pipeline includes graceful error handling:
+
+- **Missing files**: If a data source path is invalid, a NameError is caught and a user-friendly message is logged
+- **Empty features**: If a feature configuration is missing, warnings are logged but processing continues
+- **PAR transcripts**: Pseudoautosomal region transcripts are automatically filtered out
+- **Version numbers**: Transcript and gene ID versions are automatically stripped
+
+## Performance Considerations
+
+**Memory Usage:**
+- Large genomes (e.g., human) require ~8-16 GB RAM
+- Processing time: ~5-15 minutes depending on data sources
+
+**Optimization Tips:**
+- Pre-filter annotations to protein-coding genes only
+- Use subset of features in features.yaml
+- Process chromosome-by-chromosome for very large datasets
+
+## Related Functions
+
+See also:
+- [Data Loaders](/api/data/loaders) - Individual data loading functions
+- [Feature Engineering](/api/data/feature-engineering) - Feature transformation details

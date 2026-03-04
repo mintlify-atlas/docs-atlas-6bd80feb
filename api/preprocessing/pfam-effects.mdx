@@ -1,0 +1,283 @@
+---
+title: pfam-effects
+description: Quantify Pfam domain effects on alternative isoforms compared to reference transcripts
+---
+
+## Overview
+
+The `pfam_effects` module quantifies the effects of alternative splicing on Pfam protein domains. It performs multiple sequence alignment (MSA) between reference and alternative isoforms, analyzes domain integrity, and generates quantitative scores representing structural impact.
+
+## Usage
+
+```bash
+python -m trifid.preprocessing.pfam_effects \
+    --appris ~/data/appris/GRCh38/g27/appris_data.appris.txt \
+    --seqs ~/data/appris/GRCh38/g27/appris_data.transl.fa.gz \
+    --spade ~/data/appris/GRCh38/g27/appris_method.spade.gtf.gz \
+    --outdir data/external/pfam_effects/GRCh38/g27 \
+    --jobs 10 \
+    --rm
+```
+
+## Command-Line Arguments
+
+<ParamField path="--appris" type="string" required>
+  Path to APPRIS scores data file. Used for reference transcript selection and annotation.
+</ParamField>
+
+<ParamField path="--seqs" type="string" required>
+  Protein sequences file in FASTA format (gzip compressed allowed). Contains translated protein sequences for all isoforms.
+</ParamField>
+
+<ParamField path="--spade" type="string" required>
+  Path to SPADE file (GTF or TSV format) containing Pfam domain annotations per transcript.
+</ParamField>
+
+<ParamField path="--outdir" type="string" required>
+  Output directory where results and intermediate files will be stored.
+</ParamField>
+
+<ParamField path="--jobs" type="integer" required>
+  Number of CPUs to use for parallel processing of MSA alignments.
+</ParamField>
+
+<ParamField path="--rm" type="boolean" default="false">
+  If set, removes intermediate files (muscle alignments, spade files, etc.) after processing.
+</ParamField>
+
+## Core Functions
+
+### annotation_reference
+
+```python
+def annotation_reference(appris_path: str, fasta_path: str, outdir: str = None, save: bool = None) -> pd.DataFrame
+```
+
+Selects one reference transcript per gene based on priority criteria.
+
+**Selection Priority:**
+1. Protein coding label
+2. Best SPADE (APPRIS score)
+3. TSL 1 (Transcript Support Level 1)
+4. CCDS identifier
+5. Highest number of residues
+6. Lowest CCDS number
+7. APPRIS tag
+
+<ParamField path="appris_path" type="string">
+  Path to APPRIS data file
+</ParamField>
+
+<ParamField path="fasta_path" type="string">
+  Path to protein FASTA sequences
+</ParamField>
+
+<ParamField path="outdir" type="string">
+  Output directory for saving reference files
+</ParamField>
+
+<ParamField path="save" type="boolean">
+  Whether to save intermediate reference files
+</ParamField>
+
+**Returns:** `pd.DataFrame` - Reference annotations with columns: gene_id, transcript_id, pfam_effects_msa, appris, sequence
+
+---
+
+### make_spade
+
+```python
+def make_spade(spade_path: str, outdir: str) -> pd.DataFrame
+```
+
+Processes SPADE file and splits Pfam domain annotations into individual transcript files.
+
+<ParamField path="spade_path" type="string">
+  Path to APPRIS SPADE file (.gtf.gz or .txt format)
+</ParamField>
+
+<ParamField path="outdir" type="string">
+  Directory to store individual Pfam domain files (creates `spade3/` subdirectory)
+</ParamField>
+
+**Returns:** `pd.DataFrame` - SPADE data with columns: transcript_id, hmm_name, pep_start, pep_end, feature, score
+
+---
+
+### mp_msa
+
+```python
+def mp_msa(appris_path: str, fasta_path: str, outdir: str, cpus: int) -> None
+```
+
+Runs multiple sequence alignment in parallel using MUSCLE for all gene isoforms against their reference.
+
+<ParamField path="appris_path" type="string">
+  Path to APPRIS data file
+</ParamField>
+
+<ParamField path="fasta_path" type="string">
+  Path to protein FASTA sequences
+</ParamField>
+
+<ParamField path="outdir" type="string">
+  Output directory for MSA results (creates `muscle/` subdirectory)
+</ParamField>
+
+<ParamField path="cpus" type="integer">
+  Number of CPUs for parallel processing
+</ParamField>
+
+**Returns:** None (writes alignment files to disk)
+
+---
+
+### analyse_transcripts
+
+```python
+def analyse_transcripts(outdir: str, outfile: str) -> str
+```
+
+Generates Perl command to analyze MUSCLE MSA alignments and quantify Pfam domain effects.
+
+<ParamField path="outdir" type="string">
+  Directory containing muscle alignments and spade files
+</ParamField>
+
+<ParamField path="outfile" type="string">
+  Path for Pfam_effects.tsv output file
+</ParamField>
+
+**Returns:** `str` - Command line string to execute Perl script
+
+---
+
+### load_pfam
+
+```python
+def load_pfam(file: str) -> pd.DataFrame
+```
+
+Loads and processes Pfam effects data, calculating domain integrity scores.
+
+**Processing steps:**
+- Separates alternative and reference transcripts
+- Converts pfam_score to 0-1 scale (1 = least affected, 0 = totally damaged)
+- Counts event types (Deletion, Insertion, Substitution, etc.)
+- Counts domain states (Lost, Damaged, Intact)
+- Calculates residue loss/gain metrics
+
+<ParamField path="file" type="string">
+  Path to Pfam_effects.tsv file generated by analyse_transcripts
+</ParamField>
+
+**Returns:** `pd.DataFrame` - Processed Pfam effects with aggregated scores per transcript
+
+**Output columns include:**
+- Event type counts: `{EventType}_Event_type` (e.g., Deletion_Event_type, Insertion_Event_type)
+- State counts: `{State}_State` (Lost_State, Damaged_State, Intact_State)
+- `n_events` - Number of Pfam domain events per transcript
+- `pfam_score` - Minimum integrity score (0-1)
+- `Lost_residues_total` - Total residues lost/swapped
+- `Gain_residues_total` - Total residues gained (insertions)
+- `Lost_residues_pfam` - Residues lost within Pfam domains
+- `Gain_residues_pfam` - Residues gained within Pfam domains
+
+---
+
+### qpfam_effects
+
+```python
+def qpfam_effects(df_reference: pd.DataFrame, df_spade: pd.DataFrame, pfam_effects_filepath: str) -> pd.DataFrame
+```
+
+Quantifies Pfam effects and generates final transcript scores.
+
+<ParamField path="df_reference" type="pd.DataFrame">
+  Reference annotations from annotation_reference function
+</ParamField>
+
+<ParamField path="df_spade" type="pd.DataFrame">
+  SPADE domain annotations from make_spade function
+</ParamField>
+
+<ParamField path="pfam_effects_filepath" type="string">
+  Path to Pfam_effects.tsv file
+</ParamField>
+
+**Returns:** `pd.DataFrame` - Final quantification with columns:
+- `gene_id` - Gene identifier
+- `transcript_id` - Transcript identifier
+- `pfam_score` - Domain integrity score (0-1, higher is better)
+- `pfam_domains_impact_score` - Overall domain impact score
+- `perc_Damaged_State` - Percentage of domains damaged
+- `perc_Lost_State` - Percentage of domains lost
+- `Lost_residues_pfam` - Number of residues lost in Pfam domains
+- `Gain_residues_pfam` - Number of residues gained in Pfam domains
+- `pfam_effects_msa` - Whether transcript is "Reference" or "Transcript"
+- `appris` - APPRIS annotation tag
+
+## Output Files
+
+The module generates several output files in the specified output directory:
+
+### qpfam.tsv.gz
+**Main output file** containing quantitative Pfam domain scores per transcript. This is the primary result used in TRIFID scoring.
+
+### Pfam_effects.tsv
+Raw Pfam effects data before aggregation (removed if `--rm` is set).
+
+### spade_references.tsv
+List of reference transcripts selected per gene (removed if `--rm` is set).
+
+### pc_translations.tsv
+Protein translations for all transcripts (removed if `--rm` is set).
+
+### muscle/ directory
+Contains ClustalW format MSA alignments for all gene isoforms (removed if `--rm` is set).
+
+### spade3/ directory
+Individual Pfam domain files per transcript (removed if `--rm` is set).
+
+## Pfam Domain States
+
+The module classifies Pfam domain effects into three states:
+
+### Lost
+The entire Pfam domain is absent in the alternative isoform.
+
+### Damaged
+The Pfam domain is present but has structural changes (deletions, insertions, or substitutions).
+
+### Intact
+The Pfam domain is completely preserved in the alternative isoform.
+
+## Event Types
+
+The module identifies several types of splicing events affecting domains:
+
+- **Deletion** - Residues removed from domain
+- **Insertion** - Residues added to domain
+- **Substitution** - Residues replaced in domain
+- **C-terminal swap** - C-terminus altered
+- **N-terminal swap** - N-terminus altered
+- **C-terminal Deletion** - C-terminus truncated
+- **N-terminal Deletion** - N-terminus truncated
+- **NAGNAG** - NAGNAG alternative splicing event
+- **Two Proteins** - Isoform produces two separate proteins
+- **Homology** - Homologous domain variation
+
+## Dependencies
+
+- **MUSCLE** - Multiple sequence alignment tool (must be installed and in PATH)
+- **Perl** - Required for running the Pfam effects analysis script
+- **APPRIS data** - Reference transcript annotations
+- **SPADE data** - Pfam domain annotations
+
+## Notes
+
+- The MSA alignment uses MUSCLE in paired mode (each alternative vs. its reference)
+- Reference transcripts are selected using a hierarchical priority system
+- Domain integrity scores range from 0 (completely damaged) to 1 (fully intact)
+- The `pfam_score` is set to 0 if any domain is in "Lost" state
+- Transcripts with fewer than 10 lost residues in Pfam domains are normalized to 0

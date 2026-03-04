@@ -1,0 +1,178 @@
+---
+title: Introduction to TRIFID
+description: Machine Learning-based tool to assess the functional relevance of splice isoforms
+---
+
+## What is TRIFID?
+
+TRIFID is a Machine Learning-based model that aims to predict the functionality of every single isoform in the genome. This method has been designed to be accurate, interpretable, and reproducible.
+
+Alternative splicing of messenger RNA can generate an array of mature transcripts, but it is not clear how many go on to produce functionally relevant protein isoforms. While peptide evidence strongly supports a main protein isoform for most coding genes, reliable proteomics experiments have found little evidence of alternative spliced proteins.
+
+<Note>
+TRIFID was developed to bridge the gap between transcriptomic data and functional protein biology by predicting which splice isoforms are likely to be biologically important.
+</Note>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="High Accuracy" icon="bullseye">
+    Trained on large-scale proteomics data from mass spectrometry experiments, distinguishing functionally important isoforms with high confidence.
+  </Card>
+  
+  <Card title="Cross-Species Conservation" icon="dna">
+    Isoforms predicted as functionally important show measurable cross-species conservation and significantly fewer broken functional domains.
+  </Card>
+  
+  <Card title="Interpretable Results" icon="chart-line">
+    Uses SHAP (SHapley Additive exPlanations) values to provide transparent, feature-level interpretation of predictions.
+  </Card>
+  
+  <Card title="Multiple Species Support" icon="globe">
+    Available predictions for human, mouse, rat, zebrafish, chicken, chimpanzee, pig, cow, macaque, fruitfly, and worm genomes.
+  </Card>
+</CardGroup>
+
+## Scientific Background
+
+TRIFID addresses a fundamental question in genomics: which alternative splice isoforms produce functional proteins?
+
+### The Problem
+
+- Alternative splicing generates diverse transcript variants
+- Most alternative exons appear to be evolving neutrally
+- Limited proteomics evidence for alternative protein isoforms
+- Need to distinguish functional isoforms from transcriptional noise
+
+### The Solution
+
+TRIFID uses **45+ predictive features** across five major categories:
+
+<AccordionGroup>
+  <Accordion title="Annotation Features" icon="file-lines">
+    - GENCODE/Ensembl/RefSeq annotations
+    - Transcript support level (TSL)
+    - CCDS consensus coding sequences
+    - Start/end region confirmation status
+  </Accordion>
+
+  <Accordion title="Evolution Features" icon="timeline">
+    - APPRIS conservation scores (Firestar, Matador3D, Corsair, SPADE, THUMP)
+    - PhyloCSF evolutionary scores
+    - ALT-Corsair cross-species conservation
+    - Protein domain conservation
+  </Accordion>
+
+  <Accordion title="Expression Features" icon="chart-bar">
+    - RNA-seq junction coverage (QSplice)
+    - Splice junction support across 32 tissues
+    - Gene-level expression normalization
+  </Accordion>
+
+  <Accordion title="Splicing Features" icon="scissors">
+    - Splice junction integrity
+    - Number of coding exons
+    - Alternative splicing event types
+  </Accordion>
+
+  <Accordion title="Structure Features" icon="cube">
+    - Pfam domain effects (QPfam)
+    - Domain integrity and coverage
+    - Functional residue preservation
+    - Signal peptide predictions
+  </Accordion>
+</AccordionGroup>
+
+## How TRIFID Works
+
+TRIFID employs a Random Forest classifier trained on high-confidence proteomics data:
+
+<Steps>
+  <Step title="Feature Extraction">
+    Extract 45+ genomic, transcriptomic, and proteomic features for each splice isoform
+  </Step>
+  
+  <Step title="Model Training">
+    Train on isoforms detected in large-scale mass spectrometry experiments (Kim et al., 2014)
+  </Step>
+  
+  <Step title="Prediction">
+    Classify isoforms with a probability score (0-1) indicating functional importance
+  </Step>
+  
+  <Step title="Score Normalization">
+    Normalize scores within each gene to identify the most important isoform(s)
+  </Step>
+</Steps>
+
+### Prediction Interpretation
+
+- **TRIFID Score (0-1)**: Raw probability of functional importance
+- **Normalized Score**: Gene-level normalized score highlighting the principal isoform
+- **High scores (>0.7)**: Likely functionally important, under purifying selection
+- **Low scores (below 0.3)**: Likely evolving neutrally, transcriptional noise
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Variant Interpretation" icon="dna">
+    Prioritize variants affecting functionally important splice isoforms in disease studies
+  </Card>
+  
+  <Card title="Genome Annotation" icon="book">
+    Identify principal isoforms for genome annotation projects
+  </Card>
+  
+  <Card title="Comparative Genomics" icon="microscope">
+    Study isoform evolution across species
+  </Card>
+  
+  <Card title="Therapeutic Targeting" icon="bullseye">
+    Select biologically relevant isoforms for drug development
+  </Card>
+</CardGroup>
+
+## Published Research
+
+TRIFID is described in the peer-reviewed manuscript:
+
+**Assessing the functional relevance of splice isoforms**  
+Pozo F, Martinez-Gomez L, Walsh TA, Rodriguez JM, Di Domenico T, Abascal F, Vazquez J, Tress ML.  
+*NAR Genomics and Bioinformatics*, Volume 3, Issue 2, June 2021, lqab044  
+[https://doi.org/10.1093/nargab/lqab044](https://doi.org/10.1093/nargab/lqab044)
+
+<Info>
+If you use TRIFID in your research, please cite this publication.
+</Info>
+
+## Data Availability
+
+Pre-computed TRIFID predictions are available for multiple genome assemblies and species:
+
+| Species | Assembly | Database | Version | Link |
+|---------|----------|----------|---------|------|
+| Human | GRCh38 | GENCODE | 27, 37, 42 | [Download](https://drive.google.com/drive/folders/1RcUgw62gXE1U2iqUHPWppaQvofP4PYuk) |
+| Human | GRCh38/37 | RefSeq | 105, 110 | [Download](https://drive.google.com/drive/folders/1LwNGWsB2dB6hXzF9nGZ1Wem4ECJV_313) |
+| Mouse | GRCm38/39 | GENCODE | 25, 31 | [Download](https://drive.google.com/drive/folders/1V3E9_Q0GmbozO5_D4BM0ZVUeXxzpu9ZN) |
+| Rat | mRatBN7.2 | Ensembl | 105 | [Download](https://drive.google.com/drive/folders/1GdXK9BrmwfCpbgEoc9xUR79qryS0R7nw) |
+| Zebrafish | GRCz11 | Ensembl | 104 | [Download](https://drive.google.com/drive/folders/1su-8I_VqHqYOdKX_WjDA8lMjFnMuFICz) |
+
+<Tip>
+See the full list of available predictions in the [Installation](/installation#pre-computed-predictions) section.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install TRIFID and download pre-computed predictions
+  </Card>
+  
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Load predictions and analyze your first gene
+  </Card>
+  
+  <Card title="GitHub Repository" icon="github" href="https://github.com/fpozoc/trifid">
+    View source code and contribute
+  </Card>
+</CardGroup>

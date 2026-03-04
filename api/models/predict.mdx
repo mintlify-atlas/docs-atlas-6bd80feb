@@ -1,0 +1,301 @@
+---
+title: "predict"
+description: "Generate predictions for transcript isoforms using trained TRIFID models"
+---
+
+## Overview
+
+The `predict` module generates TRIFID scores for transcript isoforms using a trained model. It handles multiple genome assemblies and releases, with automatic feature preprocessing and missing value handling.
+
+## Command-Line Usage
+
+```bash
+python -m trifid.models.predict \
+    --config config/config.yaml \
+    --features config/features.yaml \
+    --model models/trifid.v_1_0_0.pkl \
+    --assembly GRCh38 \
+    --release g27
+```
+
+### Command-Line Arguments
+
+<ParamField path="-a, --assembly" type="string" default="GRCh38">
+  Genome assembly version. Supported assemblies:
+  - Human: `GRCh38`, `GRCh37`
+  - Mouse: `GRCm39`, `GRCm38`
+  - Rat: `Rnor_6.0`
+  - Zebrafish: `GRCz11`
+  - Pig: `Sscrofa11.1`
+  - Chimpanzee: `Pan_tro_3.0`
+  - Chicken: `GRCg6a`
+  - Cow: `ARS-UCD1.2`
+  - Fly: `BDGP6`
+  - Worm: `WBcel235`
+</ParamField>
+
+<ParamField path="-c, --config" type="string" default="config/config.yaml">
+  Path to configuration file containing genome and annotation settings
+</ParamField>
+
+<ParamField path="-f, --features" type="string" default="config/features.yaml">
+  Path to features selected description YAML file
+</ParamField>
+
+<ParamField path="-m, --model" type="string" default="models/trifid.v_1_0_4.pkl">
+  Path to pretrained model pickle file
+</ParamField>
+
+<ParamField path="-r, --release" type="string" default="g27">
+  Genome release version (e.g., g27, r110, e104)
+</ParamField>
+
+## Core Function
+
+### make_predictions()
+
+Generates TRIFID predictions for transcript isoforms.
+
+```python
+from trifid.models.predict import make_predictions
+
+make_predictions(
+    features=feature_list,
+    ids=identifier_list,
+    config=config_dict,
+    model=trained_model,
+    assembly="GRCh38",
+    release="g27"
+)
+```
+
+#### Parameters
+
+<ParamField path="features" type="list" required>
+  List of feature column names to use for prediction
+</ParamField>
+
+<ParamField path="ids" type="list" required>
+  List of identifier column names (e.g., gene_id, transcript_id)
+</ParamField>
+
+<ParamField path="config" type="dict" required>
+  Configuration dictionary containing:
+  - `annotation.genome_version`: Genome assembly version
+  - `annotation.db`: Database directory name
+</ParamField>
+
+<ParamField path="model" type="object" required>
+  Trained scikit-learn model object loaded from pickle file
+</ParamField>
+
+<ParamField path="assembly" type="string" required>
+  Genome assembly version identifier
+</ParamField>
+
+<ParamField path="release" type="string" required>
+  Genome release identifier
+</ParamField>
+
+#### Returns
+
+Writes predictions to `trifid_predictions.tsv.gz` with the following columns:
+
+<ResponseField name="gene_id" type="string">
+  Ensembl gene identifier
+</ResponseField>
+
+<ResponseField name="gene_name" type="string">
+  Gene symbol/name
+</ResponseField>
+
+<ResponseField name="transcript_id" type="string">
+  Ensembl transcript identifier
+</ResponseField>
+
+<ResponseField name="translation_id" type="string">
+  Ensembl protein identifier
+</ResponseField>
+
+<ResponseField name="flags" type="string">
+  Annotation flags
+</ResponseField>
+
+<ResponseField name="ccdsid" type="string">
+  CCDS identifier (if available)
+</ResponseField>
+
+<ResponseField name="appris" type="string">
+  APPRIS annotation
+</ResponseField>
+
+<ResponseField name="ann_type" type="string">
+  Annotation type
+</ResponseField>
+
+<ResponseField name="length" type="integer">
+  Transcript length
+</ResponseField>
+
+<ResponseField name="trifid_score" type="float">
+  Raw TRIFID score (probability from 0-1)
+</ResponseField>
+
+<ResponseField name="norm_trifid_score" type="float">
+  Normalized TRIFID score within gene
+</ResponseField>
+
+## Assembly-Specific Preprocessing
+
+The function automatically handles missing values and feature differences across assemblies:
+
+### Human Assemblies
+
+**GRCh38 (Gencode)**:
+- No special preprocessing required
+- All features available
+
+**GRCh37 (Gencode)**:
+- Fills missing values with -1
+
+**GRCh38/GRCh37 (RefSeq)**:
+- Fills RefSeq-unavailable features with -1
+- Handles CCDS binary encoding
+- Fills corsair features with 0
+- Fills RNA2sj features with -1 (GRCh37 only)
+
+### Model Organism Assemblies
+
+**Mouse (GRCm39, GRCm38)**:
+- Fills RNA2sj features with -1
+
+**Rat (Rnor_6.0), Zebrafish (GRCz11), Pig (Sscrofa11.1), Chimpanzee (Pan_tro_3.0)**:
+- Removes CCDS feature
+- Loads ACDS (Alternative CCDS) data
+- Fills RNA2sj features with -1
+
+**Chicken (GRCg6a), Cow (ARS-UCD1.2), Fly (BDGP6)**:
+- Fills all missing values with -1
+
+**Worm (WBcel235)**:
+- Fills all missing values with -1 or 0
+
+## Example Workflows
+
+### Basic Prediction
+
+```python
+import pickle
+import pandas as pd
+from trifid.models.predict import make_predictions
+from trifid.utils.utils import parse_yaml
+
+# Load configuration
+config = parse_yaml("config/config.yaml")
+df_features = pd.DataFrame(parse_yaml("config/features.yaml"))
+
+# Load model
+model = pickle.load(open("models/trifid.v_1_0_4.pkl", "rb"))
+
+# Extract feature and identifier lists
+features = df_features[
+    ~df_features["category"].str.contains("Identifier")
+]["feature"].values
+ids = df_features[
+    df_features["category"].str.contains("Identifier")
+]["feature"].values
+
+# Generate predictions
+make_predictions(
+    features=features,
+    ids=ids,
+    config=config,
+    model=model,
+    assembly="GRCh38",
+    release="g27"
+)
+```
+
+### Predict for Multiple Assemblies
+
+```bash
+# Human GRCh38
+python -m trifid.models.predict \
+    --assembly GRCh38 \
+    --release g27
+
+# Human GRCh37
+python -m trifid.models.predict \
+    --assembly GRCh37 \
+    --release g27
+
+# Mouse GRCm39
+python -m trifid.models.predict \
+    --assembly GRCm39 \
+    --release m27
+```
+
+### Custom Model Path
+
+```bash
+python -m trifid.models.predict \
+    --config config/config.yaml \
+    --features config/features.yaml \
+    --model models/custom_model.pkl \
+    --assembly GRCh38 \
+    --release g27
+```
+
+## Input Requirements
+
+### TRIFID Database
+
+The input database (`trifid_db.tsv.gz`) must contain:
+
+1. **Identifier columns**: gene_id, gene_name, transcript_id, translation_id, ccdsid
+2. **Feature columns**: All features specified in features YAML
+3. **Annotation columns**: flags, appris, ann_type
+
+### Configuration File
+
+The config YAML must specify:
+
+```yaml
+annotation:
+  genome_version: "GRCh38"
+  db: "g27"
+```
+
+### Features File
+
+The features YAML must include:
+
+```yaml
+- feature: "gene_id"
+  category: "Identifier"
+- feature: "transcript_length"
+  category: "Structural"
+  refseq: "y"  # or "n" for RefSeq-incompatible features
+```
+
+## Output Format
+
+Predictions are saved to:
+```
+data/genomes/{assembly}/{release}/trifid_predictions.tsv.gz
+```
+
+The output file is a compressed TSV with headers and contains one row per transcript isoform.
+
+## Performance Considerations
+
+- The function processes the entire TRIFID database for the specified assembly
+- Memory usage depends on genome size (human: ~200K transcripts)
+- Prediction time: ~1-10 seconds for human genome with RandomForest model
+- Output file size: ~5-15 MB compressed
+
+## Related Modules
+
+- [train](/api/models/train): Model training
+- [interpret](/api/models/interpret): Model interpretation and feature importance
+- [select](/api/models/select): Model selection and evaluation

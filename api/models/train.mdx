@@ -1,0 +1,201 @@
+---
+title: "train"
+description: "Train TRIFID models with custom, pretrained, or model selection protocols"
+---
+
+## Overview
+
+The `train` module provides functionality for training TRIFID models using different protocols: custom models, pretrained models, or automated model selection via nested cross-validation.
+
+## Command-Line Usage
+
+```bash
+python -m trifid.models.train \
+    --features config/features.yaml \
+    --pretrained
+```
+
+### Command-Line Arguments
+
+<ParamField path="-c, --custom" type="flag" default="False">
+  Train and save a customized model with specific hyperparameters
+</ParamField>
+
+<ParamField path="-f, --features" type="string" default="config/features.yaml">
+  Path to features selected description YAML file
+</ParamField>
+
+<ParamField path="-m, --model_selection" type="flag" default="False">
+  Perform a nested CV model selection protocol, training and saving the best model
+</ParamField>
+
+<ParamField path="-p, --pretrained" type="flag" default="False">
+  Train TRIFID with a previously trained model
+</ParamField>
+
+<ParamField path="-s, --seed" type="integer" default="123">
+  Random seed for reproducibility
+</ParamField>
+
+## Main Function
+
+### main()
+
+Executes the training workflow based on command-line arguments.
+
+```python
+from trifid.models.train import main
+
+main()
+```
+
+The function performs the following steps:
+
+1. Parses command-line arguments
+2. Loads feature configuration from YAML
+3. Loads the TRIFID database and training set
+4. Executes one of three training protocols:
+   - **Model Selection**: Uses `ModelSelection` class for nested CV
+   - **Custom Model**: Trains a `RandomForestClassifier` with specified hyperparameters
+   - **Pretrained Model**: Loads and retrains an existing model
+
+## Training Protocols
+
+### Model Selection Protocol
+
+When `--model_selection` is specified:
+
+```python
+from trifid.models.select import ModelSelection
+
+ms = ModelSelection(
+    df_training_set,
+    features_col=df_training_set[features],
+    target_col="label",
+    random_state=123
+)
+model = ms.get_best_model(outdir="models")
+```
+
+### Custom Model Training
+
+When `--custom` is specified:
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from trifid.models.select import Classifier
+
+custom_model = RandomForestClassifier(
+    n_estimators=400,
+    class_weight=None,
+    max_features=7,
+    min_samples_leaf=7,
+    random_state=123
+)
+
+model = Classifier(
+    model=custom_model,
+    df=df_training_set,
+    features_col=df_training_set[features].columns,
+    target_col="label",
+    random_state=123
+)
+model.save_model(outdir="models")
+```
+
+### Pretrained Model Training
+
+When `--pretrained` is specified:
+
+```python
+import pickle
+from trifid.models.select import Classifier
+
+pretrained_model = pickle.load(
+    open(os.path.join("models", "selected_model.pkl"), "rb")
+)
+
+model = Classifier(
+    model=pretrained_model,
+    df=df_training_set,
+    features_col=df_training_set[features].columns,
+    target_col="label",
+    random_state=123
+)
+```
+
+## Default Hyperparameters
+
+The default custom model uses the following hyperparameters:
+
+- **n_estimators**: 400
+- **class_weight**: None
+- **max_features**: 7
+- **min_samples_leaf**: 7
+- **random_state**: Specified by `--seed` (default: 123)
+
+## Input Data
+
+### Training Set Format
+
+The training set should be a TSV file with:
+
+- Feature columns as specified in the features YAML
+- A `state` column containing:
+  - "F" entries (labeled as 1 - functional)
+  - "U" entries (labeled as 0 - unfunctional)
+- Additional metadata columns: `added`, `comment`
+
+### TRIFID Database
+
+Located at `data/genomes/GRCh38/g27/trifid_db.tsv.gz`, contains:
+
+- All feature values for transcript isoforms
+- Identifier columns
+- Annotation metadata
+
+## Output
+
+The training module generates:
+
+- **selected_model.pkl**: Serialized trained model
+- **training_set_final.g27.tsv.gz**: Processed training set
+- **model_selection_*.tsv.gz**: Model selection results (if using `--model_selection`)
+- **model_selection_*.log**: Training log file
+
+## Example Workflows
+
+### Train with Model Selection
+
+```bash
+python -m trifid.models.train \
+    --features config/features.yaml \
+    --model_selection \
+    --seed 42
+```
+
+### Train Custom Model
+
+```bash
+python -m trifid.models.train \
+    --features config/features.yaml \
+    --custom \
+    --seed 42
+```
+
+### Retrain Pretrained Model
+
+```bash
+python -m trifid.models.train \
+    --features config/features.yaml \
+    --pretrained \
+    --seed 42
+```
+
+## Related Classes
+
+See the [select](/api/models/select) module for details on:
+
+- `Classifier`: Model training and evaluation wrapper
+- `ModelSelection`: Nested cross-validation model selection
+- `Splitter`: Train/test splitting utilities

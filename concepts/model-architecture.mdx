@@ -1,0 +1,319 @@
+---
+title: "Model Architecture"
+description: "Deep dive into TRIFID's Random Forest classifier, hyperparameters, and model selection strategy"
+icon: "brain"
+---
+
+## Random Forest Architecture
+
+TRIFID employs a **Random Forest Classifier** as its core machine learning model. This ensemble learning method combines multiple decision trees to produce robust, accurate predictions for transcript isoform functionality.
+
+### Model Configuration
+
+The production TRIFID model uses the following hyperparameters:
+
+```python
+# From trifid/models/train.py:86-89
+RandomForestClassifier(
+    n_estimators=400,      # Number of trees in the forest
+    class_weight=None,     # Equal weight to both classes
+    max_features=7,        # Features considered at each split
+    min_samples_leaf=7,    # Minimum samples required at leaf nodes
+    random_state=123       # Seed for reproducibility
+)
+```
+
+<Note>
+These hyperparameters were selected through extensive nested cross-validation experiments to optimize performance on the training dataset.
+</Note>
+
+## Hyperparameter Breakdown
+
+### n_estimators (400)
+
+The number of decision trees in the forest.
+
+- **Why 400?** More trees generally improve performance and stability, with diminishing returns after 300-500 trees
+- **Trade-off**: Increased training time and memory usage vs. improved accuracy and reduced variance
+- Each tree votes on the final prediction, making the ensemble robust to individual tree errors
+
+### max_features (7)
+
+Number of features randomly sampled as candidates at each split point.
+
+- **Why 7?** With 45+ total features, sampling 7 (~15-20%) provides good diversity while maintaining predictive power
+- **Effect**: Introduces decorrelation between trees, reducing overfitting
+- **Rule of thumb**: Often set to √(total_features) for classification, adjusted through hyperparameter tuning
+
+### min_samples_leaf (7)
+
+Minimum number of samples required to be at a leaf node.
+
+- **Why 7?** Prevents overfitting by ensuring leaves represent meaningful patterns
+- **Effect**: Smooths predictions and improves generalization
+- **Trade-off**: Higher values = simpler trees (may underfit), lower values = complex trees (may overfit)
+
+### class_weight (None)
+
+Equal weighting for functional and non-functional classes.
+
+- **Why None?** The training set is balanced, eliminating need for class weighting
+- **Alternative**: `class_weight='balanced'` automatically adjusts weights inversely proportional to class frequencies
+
+### random_state (123)
+
+Seed for random number generation.
+
+- **Purpose**: Ensures reproducible results across runs
+- **Impact**: Controls bootstrap sampling and feature selection randomness
+
+## Model Selection Protocol
+
+TRIFID uses a sophisticated **Nested Cross-Validation** strategy to select the optimal model architecture and hyperparameters.
+
+### Architecture Overview
+
+```python
+# From trifid/models/select.py:209-242
+class ModelSelection(Splitter):
+    def __init__(
+        self,
+        df: list,
+        features_col: list,
+        target_col: str,
+        random_state: int = 123,
+        n_outer_splits: int = 5,   # Outer CV folds
+        n_inner_splits: int = 10,  # Inner CV folds
+        n_jobs: int = 20,          # Parallel processors
+    )
+```
+
+<Accordion title="What is Nested Cross-Validation?">
+Nested CV provides unbiased model performance estimates by:
+
+1. **Outer Loop** (5 folds): Evaluates final model performance
+2. **Inner Loop** (10 folds): Tunes hyperparameters
+
+This prevents information leakage between training and validation, which would occur with simple CV.
+
+**Key Insight**: The inner loop finds the best hyperparameters, while the outer loop tests how well those hyperparameters generalize.
+</Accordion>
+
+### Grid Search Configuration
+
+TRIFID explores multiple model architectures during selection:
+
+```python
+# From trifid/models/select.py:429-439
+"Random Forest": {
+    "model": RandomForestClassifier(
+        n_estimators=400, 
+        random_state=self.random_state, 
+        n_jobs=-1
+    ),
+    "grid1": [{
+        "min_samples_leaf": list(range(5, 15)),  # Tests 5-14
+        # Additional parameters can be uncommented:
+        # "max_features": list(range(5, 10)),
+        # "class_weight": [None, 'balanced']
+    }]
+}
+```
+
+<Card title="Hyperparameter Search Space" icon="grid">
+The grid search systematically tests:
+- **min_samples_leaf**: 10 values (5 through 14)
+- This creates 10 unique model configurations
+- Each tested with 10-fold inner CV = 100 model fits per outer fold
+- Total: 5 outer × 100 inner = **500 model evaluations**
+</Card>
+
+### Alternative Models Considered
+
+The model selection framework supports multiple algorithms (though Random Forest is default):
+
+```python
+# From trifid/models/select.py:403-456
+# Available but commented out:
+# - Decision Tree
+# - AdaBoost
+# - Extremely Randomized Trees
+# - Gradient Boosting Machine
+# - K-Nearest Neighbors
+# - Logistic Regression
+# - Support Vector Machine
+# - XGBoost
+```
+
+<Tip>
+You can enable alternative models by uncommenting them in `trifid/models/select.py:396-467`. Each requires its own hyperparameter grid.
+</Tip>
+
+## Model Evaluation Metrics
+
+TRIFID uses comprehensive metrics to assess model performance:
+
+```python
+# From trifid/models/select.py:367-378
+scores = {
+    "Accuracy": accuracy_score(target, predictions),
+    "AUC": roc_auc_score(target, probs),
+    "Average Precision Score": average_precision_score(target, probs),
+    "Balanced Accuracy": balanced_accuracy_score(target, predictions),
+    "F1 Score": f1_score(target, predictions),
+    "Log Loss": -1 * (log_loss(target, probs)),
+    "MCC": matthews_corrcoef(target, predictions),
+    "Precision": precision_score(target, predictions),
+    "Recall": recall_score(target, predictions),
+}
+```
+
+### Primary Selection Metric: MCC
+
+**Matthews Correlation Coefficient (MCC)** is used as the primary metric for model selection:
+
+```python
+# From trifid/models/select.py:243
+def get_best_model(self, outdir: str = None, selection_metric="MCC") -> str:
+```
+
+<Accordion title="Why MCC?">
+MCC is superior for binary classification because it:
+
+- **Balanced**: Accounts for all confusion matrix categories (TP, TN, FP, FN)
+- **Robust**: Works well even with class imbalance
+- **Range**: -1 (perfect disagreement) to +1 (perfect prediction), 0 = random
+- **Informative**: Captures both precision and recall simultaneously
+
+Formula:
+```
+MCC = (TP×TN - FP×FN) / √((TP+FP)(TP+FN)(TN+FP)(TN+FN))
+```
+
+For TRIFID, high MCC means accurately identifying both functional and non-functional isoforms.
+</Accordion>
+
+## Training Pipeline
+
+TRIFID provides three training modes:
+
+### 1. Model Selection Mode
+
+```bash
+python -m trifid.models.train \
+    --model_selection \
+    --features config/features.yaml
+```
+
+Performs full nested CV, selects best hyperparameters, trains final model.
+
+**Code reference**: `trifid/models/train.py:79-83`
+
+### 2. Custom Model Mode
+
+```bash
+python -m trifid.models.train \
+    --custom \
+    --features config/features.yaml
+```
+
+Trains a model with predefined hyperparameters (skips grid search).
+
+**Code reference**: `trifid/models/train.py:85-96`
+
+### 3. Pretrained Model Mode
+
+```bash
+python -m trifid.models.train \
+    --pretrained \
+    --features config/features.yaml
+```
+
+Loads an existing model and retrains on new data.
+
+**Code reference**: `trifid/models/train.py:98-106`
+
+<Warning>
+All training modes require a labeled training set at `data/model/training_set_initial.g27.tsv.gz` with functional/non-functional labels.
+</Warning>
+
+## Model Persistence
+
+Trained models are serialized using Python's pickle format:
+
+```python
+# From trifid/models/select.py:326-328
+def save_model(self, outdir: str):
+    with open(os.path.join(outdir, "selected_model.pkl"), "wb") as model_filepath:
+        pickle.dump(self.model, model_filepath)
+```
+
+**Saved artifacts**:
+- `selected_model.pkl`: Trained Random Forest classifier
+- `model_selection_<timestamp>.tsv.gz`: Grid search results and metrics
+- `model_selection_<timestamp>.log`: Detailed training logs
+
+## Classifier Class
+
+The `Classifier` class (see `trifid/models/select.py:94`) wraps the Random Forest and provides:
+
+```python
+class Classifier(Splitter):
+    # Key methods:
+    def fit()                  # Train the model
+    def evaluate              # Calculate performance metrics
+    def classification_report # Detailed classification report
+    def confusion_matrix      # TP, TN, FP, FN breakdown
+    def cross_validate()      # K-fold cross-validation
+    def make_prediction()     # Generate predictions
+    def save_model()          # Serialize model to disk
+```
+
+<Card title="Pipeline Integration" icon="arrow-progress">
+The Classifier can include preprocessing steps:
+
+```python
+self.pipeline = Pipeline([
+    ('preprocessing', self.preprocessing),  # Optional StandardScaler, etc.
+    ('model', self.model)                   # Random Forest
+])
+```
+
+Currently, `preprocessing=None` (no scaling needed for tree-based models).
+</Card>
+
+## Performance Considerations
+
+### Computational Requirements
+
+- **Training time**: ~10-30 minutes on 20 cores for full nested CV
+- **Memory**: ~4-8 GB RAM for typical datasets
+- **Parallelization**: Uses `n_jobs=-1` to leverage all available CPU cores
+
+### Optimization Tips
+
+1. **Reduce n_estimators**: 200-300 trees often sufficient for faster training
+2. **Limit grid search**: Focus on 2-3 key hyperparameters
+3. **Use warm_start**: Resume training from previous model state
+4. **Sample data**: Train on subset for rapid prototyping
+
+<Tip>
+For production use, the pretrained TRIFID model (`trifid.v_1_0_4.pkl`) is optimized and ready for immediate predictions without retraining.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Predictive Features" icon="table" href="./predictive-features">
+    Explore the 45+ features that power TRIFID's predictions
+  </Card>
+  <Card title="Interpretability" icon="eye" href="./interpretability">
+    Understand how SHAP explains model decisions
+  </Card>
+  <Card title="Training Custom Models" icon="graduation-cap" href="../guides/training">
+    Learn how to train TRIFID on your own data
+  </Card>
+  <Card title="API Reference" icon="code" href="../api-reference/models">
+    Complete API documentation for model classes
+  </Card>
+</CardGroup>

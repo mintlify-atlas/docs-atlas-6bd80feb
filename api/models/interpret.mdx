@@ -1,0 +1,386 @@
+---
+title: "interpret"
+description: "Interpret and explain TRIFID model predictions using multiple feature importance methods"
+---
+
+## Overview
+
+The `interpret` module provides comprehensive model interpretation capabilities using SHAP values, permutation importance, and other feature importance metrics. It enables both global feature importance analysis and local (instance-level) explanations.
+
+## TreeInterpretation Class
+
+Main class for interpreting tree-based models (e.g., RandomForest, GradientBoosting).
+
+### Constructor
+
+```python
+from trifid.models.interpret import TreeInterpretation
+
+interpreter = TreeInterpretation(
+    model=trained_model,
+    df=training_dataframe,
+    features_col=feature_columns,
+    target_col="label",
+    random_state=123,
+    test_size=0.25,
+    preprocessing=None
+)
+```
+
+#### Parameters
+
+<ParamField path="model" type="object" required>
+  Trained scikit-learn model instance (e.g., RandomForestClassifier)
+</ParamField>
+
+<ParamField path="df" type="pandas.DataFrame" required>
+  Training dataset as pandas DataFrame
+</ParamField>
+
+<ParamField path="features_col" type="list" required>
+  List of feature column names to use as independent variables
+</ParamField>
+
+<ParamField path="target_col" type="string" required>
+  Name of target column to use as dependent variable
+</ParamField>
+
+<ParamField path="random_state" type="integer" default="123">
+  Random seed for reproducibility
+</ParamField>
+
+<ParamField path="test_size" type="float" default="0.25">
+  Proportion of dataset to use for testing (0.0 to 1.0)
+</ParamField>
+
+<ParamField path="preprocessing" type="object" default="None">
+  Optional preprocessing step to add to model pipeline (e.g., StandardScaler)
+</ParamField>
+
+### Attributes
+
+After initialization, the model is automatically fitted:
+
+<ResponseField name="model" type="object">
+  The fitted model instance
+</ResponseField>
+
+<ResponseField name="predictions" type="numpy.ndarray">
+  Model predictions on test set
+</ResponseField>
+
+<ResponseField name="probabilities" type="numpy.ndarray">
+  Predicted probabilities for positive class
+</ResponseField>
+
+<ResponseField name="train_features" type="pandas.DataFrame">
+  Training features
+</ResponseField>
+
+<ResponseField name="test_features" type="pandas.DataFrame">
+  Test features
+</ResponseField>
+
+<ResponseField name="train_target" type="pandas.Series">
+  Training target values
+</ResponseField>
+
+<ResponseField name="test_target" type="pandas.Series">
+  Test target values
+</ResponseField>
+
+## Global Feature Importance Methods
+
+The class provides multiple property methods for computing feature importance:
+
+### feature_importances
+
+Standard scikit-learn feature importances (Gini/entropy-based).
+
+```python
+df_importance = interpreter.feature_importances
+```
+
+**Returns**: DataFrame with columns:
+- `feature`: Feature name
+- `feature_importances_sklearn`: Importance score
+
+**Reference**: [scikit-learn documentation](https://scikit-learn.org/stable/auto_examples/ensemble/plot_forest_importances.html)
+
+### cv_importances
+
+Cross-validated feature importances using k-fold CV.
+
+```python
+df_importance = interpreter.cv_importances
+```
+
+**Returns**: DataFrame with columns:
+- `feature`: Feature name
+- `cv_feature_importances`: Cross-validated importance score
+
+**Reference**: [random-forest-importances](https://github.com/parrt/random-forest-importances)
+
+### dropcol_importances
+
+Importance computed by dropping each feature and measuring performance decrease.
+
+```python
+df_importance = interpreter.dropcol_importances
+```
+
+**Returns**: DataFrame with columns:
+- `feature`: Feature name
+- `dropcol_importances`: Drop-column importance score
+
+**Reference**: [Explained.ai RF Importance](https://explained.ai/rf-importance/)
+
+### oob_dropcol_importances
+
+Out-of-bag drop-column importances (for RandomForest only).
+
+```python
+df_importance = interpreter.oob_dropcol_importances
+```
+
+**Returns**: DataFrame with columns:
+- `feature`: Feature name
+- `oob_dropcol_importances`: OOB drop-column importance score
+
+### permutation_importances
+
+Permutation importance using stratified k-fold cross-validation.
+
+```python
+df_importance = interpreter.permutation_importances
+```
+
+**Returns**: DataFrame with columns:
+- `feature`: Feature name
+- `permutation_importance`: Permutation importance score
+
+**Reference**: [ELI5 documentation](https://eli5.readthedocs.io/en/latest/)
+
+### feature_importance_permutation
+
+Permutation importance using mlxtend library.
+
+```python
+df_importance = interpreter.feature_importance_permutation
+```
+
+**Returns**: DataFrame with columns:
+- `feature`: Feature name
+- `feature_importance_permutation`: Importance score from 10 rounds
+
+**Reference**: [mlxtend documentation](http://rasbt.github.io/mlxtend/user_guide/evaluate/feature_importance_permutation/)
+
+### shap
+
+SHAP (SHapley Additive exPlanations) values for feature importance.
+
+```python
+df_importance = interpreter.shap
+```
+
+**Returns**: DataFrame with columns:
+- `feature`: Feature name
+- `shap`: Mean absolute SHAP value
+
+**Reference**: [SHAP documentation](https://shap.readthedocs.io/en/latest/)
+
+### mutual_information
+
+Mutual information between features and target.
+
+```python
+df_importance = interpreter.mutual_information
+```
+
+**Returns**: DataFrame with columns:
+- `feature`: Feature name
+- `mutual_information`: MI score (0 = independent, higher = more dependent)
+
+**Reference**: [scikit-learn MI documentation](https://scikit-learn.org/stable/modules/generated/sklearn.feature_selection.mutual_info_classif.html)
+
+### target_permutation
+
+Feature importance via target permutation (MDI vs MDA).
+
+```python
+df_importance = interpreter.target_permutation
+```
+
+**Returns**: DataFrame with columns:
+- `feature`: Feature name
+- `ratio_mdi-mda`: Ratio of Mean Decrease in Impurity to Mean Decrease in Accuracy
+
+**Reference**: [Kaggle notebook by Olivier Grellier](https://www.kaggle.com/ogrellier/feature-selection-target-permutations)
+
+### merge_feature_importances
+
+Combines all feature importance methods into a single DataFrame.
+
+```python
+df_all_importance = interpreter.merge_feature_importances
+```
+
+**Returns**: DataFrame with all importance scores merged on feature name
+
+## Local Explanation Methods
+
+Explain individual predictions using SHAP values.
+
+### local_explanation()
+
+Generate local SHAP explanations for a specific transcript or gene.
+
+```python
+df_explanation = interpreter.local_explanation(
+    df_features=features_dataframe,
+    sample="ENST00000456328.2",
+    waterfall=False
+)
+```
+
+#### Parameters
+
+<ParamField path="df_features" type="pandas.DataFrame" required>
+  DataFrame containing features for all samples, including gene_name and transcript_id columns
+</ParamField>
+
+<ParamField path="sample" type="string" required>
+  Either:
+  - Ensembl transcript ID (e.g., "ENST00000456328.2")
+  - Gene name (e.g., "DDX11L1")
+</ParamField>
+
+<ParamField path="waterfall" type="boolean" default="False">
+  If True, displays a waterfall plot for the transcript
+</ParamField>
+
+#### Returns
+
+**For transcript ID**: DataFrame with columns:
+- Index: Feature names
+- `shap`: SHAP value for each feature
+- `feature`: Feature value
+
+**For gene name**: DataFrame with:
+- Rows: Feature names
+- Columns: Transcript IDs within the gene
+- Values: SHAP values
+- Additional columns: `std` (standard deviation), `sum` (sum across transcripts)
+
+### waterfall_plot()
+
+Generate a SHAP waterfall plot for a specific sample.
+
+```python
+interpreter.waterfall_plot(
+    model=trained_model,
+    df_features=features_dataframe,
+    sample="ENST00000456328.2"
+)
+```
+
+## Complete Example
+
+```python
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from trifid.models.interpret import TreeInterpretation
+
+# Load data
+df_training = pd.read_csv("data/training_set.tsv", sep="\t")
+feature_cols = [col for col in df_training.columns 
+                if col not in ["label", "gene_id", "transcript_id"]]
+
+# Create and fit model
+model = RandomForestClassifier(
+    n_estimators=400,
+    max_features=7,
+    min_samples_leaf=7,
+    random_state=123
+)
+
+# Initialize interpreter
+interpreter = TreeInterpretation(
+    model=model,
+    df=df_training,
+    features_col=feature_cols,
+    target_col="label",
+    random_state=123,
+    test_size=0.25
+)
+
+# Global feature importance
+print("SHAP Importances:")
+print(interpreter.shap.head(10))
+
+print("\nMerged Importances:")
+print(interpreter.merge_feature_importances.head(10))
+
+# Local explanation for a specific transcript
+transcript_explanation = interpreter.local_explanation(
+    df_features=df_training,
+    sample="ENST00000456328.2",
+    waterfall=True
+)
+print("\nLocal Explanation:")
+print(transcript_explanation)
+
+# Local explanation for all transcripts in a gene
+gene_explanation = interpreter.local_explanation(
+    df_features=df_training,
+    sample="DDX11L1",
+    waterfall=False
+)
+print("\nGene-level Explanation:")
+print(gene_explanation)
+```
+
+## Feature Importance Comparison
+
+```python
+import matplotlib.pyplot as plt
+
+# Get multiple importance metrics
+importances = interpreter.merge_feature_importances
+
+# Plot comparison
+fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+
+importances.nlargest(10, 'shap').plot(
+    x='feature', y='shap', kind='barh', ax=axes[0,0], title='SHAP'
+)
+importances.nlargest(10, 'permutation_importance').plot(
+    x='feature', y='permutation_importance', kind='barh', 
+    ax=axes[0,1], title='Permutation'
+)
+importances.nlargest(10, 'dropcol_importances').plot(
+    x='feature', y='dropcol_importances', kind='barh', 
+    ax=axes[1,0], title='Drop Column'
+)
+importances.nlargest(10, 'feature_importances_sklearn').plot(
+    x='feature', y='feature_importances_sklearn', kind='barh', 
+    ax=axes[1,1], title='Sklearn (Gini)'
+)
+
+plt.tight_layout()
+plt.show()
+```
+
+## Best Practices
+
+1. **Use multiple importance methods**: Different methods capture different aspects of feature importance
+2. **SHAP for interpretation**: SHAP values provide theoretically sound feature attributions
+3. **Permutation for model-agnostic**: Works with any model type
+4. **Local explanations**: Use for understanding individual predictions and debugging
+5. **Cross-validation**: CV-based methods provide more robust estimates
+
+## Related Modules
+
+- [train](/api/models/train): Model training
+- [predict](/api/models/predict): Generate predictions
+- [select](/api/models/select): Model selection and evaluation

@@ -1,0 +1,777 @@
+---
+title: 'Interpreting Results'
+description: 'Understanding TRIFID scores, using SHAP explanations, and visualizing model decisions'
+icon: 'chart-line'
+---
+
+TRIFID provides multiple ways to interpret and explain its predictions. This guide covers score interpretation, feature importance analysis, and local explanations for individual transcripts.
+
+## Overview
+
+Interpretation methods in TRIFID:
+
+1. **Global interpretation**: Understanding overall feature importance
+2. **Local explanation**: Why specific transcripts received their scores
+3. **SHAP values**: Model-agnostic explanations
+4. **Visualization**: Plots and waterfall charts
+
+## Understanding TRIFID Scores
+
+### Score Components
+
+Each transcript receives two scores:
+
+**trifid_score (Raw Score)**
+- Probability that transcript is functional
+- Range: 0.0 to 1.0
+- Independent across genes
+- Reflects absolute confidence
+
+**norm_trifid_score (Normalized Score)**
+- Relative functionality within gene
+- Range: 0.0 to 1.0
+- The highest scoring isoform per gene gets 1.0
+- Reflects relative importance
+
+### Example Interpretation
+
+```
+gene_name  transcript_id    trifid_score  norm_trifid_score
+TP53       ENST00000269305  0.8912        1.0000
+TP53       ENST00000420246  0.3421        0.3839
+TP53       ENST00000413465  0.6234        0.6994
+```
+
+**Analysis:**
+- ENST00000269305: Highly functional (0.89) and the principal isoform (1.0)
+- ENST00000420246: Lower confidence (0.34), likely non-functional
+- ENST00000413465: Moderate score (0.62), context-dependent function
+
+<Info>
+For identifying principal isoforms, use `norm_trifid_score`. For filtering functional transcripts genome-wide, use `trifid_score`.
+</Info>
+
+## Global Feature Importance
+
+Understand which features drive predictions across the entire dataset.
+
+### Multiple Importance Methods
+
+TRIFID's TreeInterpretation class provides 8 different importance metrics:
+
+```python
+from trifid.models.interpret import TreeInterpretation
+
+# Initialize with trained model
+interpreter = TreeInterpretation(
+    model=trained_model,
+    df=df_training_set,
+    features_col=feature_names,
+    target_col='label',
+    random_state=123
+)
+
+# Get all importance scores
+df_importances = interpreter.merge_feature_importances
+print(df_importances)
+```
+
+### Importance Metrics Explained
+
+<AccordionGroup>
+  <Accordion title="Sklearn Feature Importances">
+    **Method:** Mean decrease in impurity (Gini)
+
+    **Code:** trifid/models/interpret.py:88-99
+
+    ```python
+    @property
+    def feature_importances(self):
+        df = pd.DataFrame(
+            self.model.feature_importances_,
+            index=self.train_features.columns
+        ).reset_index().rename(
+            columns={'index': 'feature', 0: 'feature_importances_sklearn'}
+        ).sort_values(by='feature_importances_sklearn', ascending=False)
+        return df
+    ```
+
+    **Pros:** Fast, built-in to Random Forest
+    **Cons:** Biased toward high-cardinality features
+  </Accordion>
+
+  <Accordion title="Permutation Importance">
+    **Method:** Decrease in accuracy when feature is randomly shuffled
+
+    **Code:** trifid/models/interpret.py:167-188
+
+    ```python
+    @property
+    def permutation_importances(self):
+        permutation_importance = PermutationImportance(
+            self.model,
+            random_state=self.random_state,
+            scoring=make_scorer(matthews_corrcoef),
+            n_iter=10,
+            cv=StratifiedKFold(n_splits=10, shuffle=True, 
+                              random_state=self.random_state),
+        ).fit(self.train_features.values, self.train_target.values)
+        # ...
+        return df
+    ```
+
+    **Pros:** Unbiased, model-agnostic
+    **Cons:** Computationally expensive
+  </Accordion>
+
+  <Accordion title="SHAP Values">
+    **Method:** Shapley values from game theory
+
+    **Code:** trifid/models/interpret.py:190-206
+
+    ```python
+    @property
+    def shap(self):
+        explainer = shap.TreeExplainer(self.model)
+        shap_values = explainer.shap_values(self.train_features)
+        vals = np.abs(shap_values).mean(0)
+        std_vals = np.abs(shap_values).std(0)
+        # ...
+        return df
+    ```
+
+    **Pros:** Theoretically sound, local explanations
+    **Cons:** Slower for large datasets
+
+    <Tip>
+    SHAP is the recommended method for publication-quality interpretations.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Drop Column Importance">
+    **Method:** Decrease in out-of-bag score when feature is dropped
+
+    **Code:** trifid/models/interpret.py:76-86
+
+    ```python
+    @property
+    def dropcol_importances(self):
+        df = oob_dropcol_importances(
+            self.model, 
+            self.train_features, 
+            self.train_target
+        ).reset_index().rename(
+            columns={'Feature': 'feature', 
+                    'Importance': 'dropcol_importances'}
+        )
+        return df
+    ```
+
+    **Pros:** Direct measure of feature necessity
+    **Cons:** Expensive, requires retraining
+  </Accordion>
+</AccordionGroup>
+
+### Example: Feature Importance Analysis
+
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from trifid.models.interpret import TreeInterpretation
+
+# Load trained model and data
+import pickle
+model = pickle.load(open('models/selected_model.pkl', 'rb'))
+df = pd.read_csv('data/model/training_set_final.g27.tsv.gz', sep='\t')
+
+# Initialize interpreter
+interpreter = TreeInterpretation(
+    model=model,
+    df=df,
+    features_col=feature_names,
+    target_col='label'
+)
+
+# Get SHAP importances
+df_shap = interpreter.shap
+print(df_shap.head(10))
+
+# Visualize
+plt.figure(figsize=(10, 6))
+sns.barplot(data=df_shap.head(15), x='shap', y='feature')
+plt.xlabel('Mean |SHAP value|')
+plt.title('Top 15 Features by SHAP Importance')
+plt.tight_layout()
+plt.savefig('feature_importance.png', dpi=300)
+plt.show()
+```
+
+**Output:**
+
+```
+                    feature      shap
+0          norm_spade        0.0823
+1          pfam_score        0.0712
+2          length_delta_score 0.0634
+3          norm_RNA2sj_cds   0.0591
+4          norm_ScorePerCodon 0.0456
+```
+
+## Local Explanations
+
+Explain why individual transcripts received their specific scores.
+
+### SHAP Waterfall Plots
+
+Show how features contribute to a specific prediction:
+
+```python
+from trifid.models.interpret import TreeInterpretation
+import shap
+
+# Load full feature database
+df_features = pd.read_csv(
+    'data/genomes/GRCh38/g27/trifid_db.tsv.gz',
+    sep='\t',
+    compression='gzip'
+)
+
+# Initialize interpreter
+interpreter = TreeInterpretation(
+    model=model,
+    df=df,
+    features_col=feature_names,
+    target_col='label'
+)
+
+# Explain specific transcript
+transcript_id = 'ENST00000380152'
+explanation = interpreter.local_explanation(
+    df_features=df_features,
+    sample=transcript_id,
+    waterfall=True
+)
+```
+
+**Code:** trifid/models/interpret.py:272-321
+
+```python
+def local_explanation(
+    self, 
+    df_features, 
+    sample: str, 
+    waterfall: bool = False
+) -> object:
+    # Identify if sample is transcript ID or gene name
+    if sample.startswith(get_id_patterns()):
+        idx = "transcript_id"
+    else:
+        idx = "gene_name"
+    
+    # Extract sample features
+    df_features = df_features[
+        ["gene_name", "transcript_id"] + list(self.features_col)
+    ]
+    df_sample = df_features.set_index(["gene_name", "transcript_id"])
+    df_sample = df_sample.iloc[
+        df_sample.index.get_level_values(idx) == sample
+    ]
+    
+    # Calculate SHAP values
+    explainer = shap.TreeExplainer(self.model)
+    shap_values = explainer.shap_values(df_sample)
+    
+    if waterfall:
+        base_value = explainer.expected_value
+        shap.plots._waterfall.waterfall_legacy(
+            base_value[0], 
+            shap_values[0]
+        )
+    
+    # Return feature contributions
+    df = pd.DataFrame(
+        list(zip(np.abs(shap_values).mean(0)[0], df_sample.values[0])),
+        columns=["shap", "feature"],
+        index=df_sample.columns,
+    ).sort_values("shap", ascending=False)
+    
+    return df.round(3)
+```
+
+### Interpreting Waterfall Plots
+
+Waterfall plots show:
+- **Base value**: Average prediction across dataset (typically ~0.5)
+- **Feature contributions**: How each feature pushes the prediction up or down
+- **Final prediction**: The TRIFID score
+
+<Frame>
+  <img src="/images/shap-waterfall-example.png" alt="Example SHAP waterfall plot" />
+</Frame>
+
+**Reading the plot:**
+- Red bars: Features increasing functionality score
+- Blue bars: Features decreasing functionality score
+- Bar length: Magnitude of feature's contribution
+
+### Gene-Level Explanations
+
+Compare SHAP values across all isoforms of a gene:
+
+```python
+# Explain all isoforms of a gene
+gene_name = 'TP53'
+explanation = interpreter.local_explanation(
+    df_features=df_features,
+    sample=gene_name,
+    waterfall=False
+)
+
+print(explanation)
+```
+
+**Output:**
+
+```
+                          ENST00000269305  ENST00000420246  ENST00000413465  std    sum
+norm_spade                0.142           0.023           0.089           0.051  0.254
+pfam_score                0.118           0.011           0.067           0.046  0.196
+length_delta_score        0.091           0.187           0.045           0.063  0.323
+norm_RNA2sj_cds           0.076           0.003           0.034           0.031  0.113
+```
+
+**Analysis:**
+- ENST00000269305: Strong positive contributions from all features
+- ENST00000420246: Particularly weak in pfam_score and RNA-seq support
+- High `std` values indicate features discriminate well between isoforms
+
+## Feature Attribution Methods
+
+TRIFID implements multiple attribution approaches for robust interpretation.
+
+### Mutual Information
+
+Measures dependency between features and labels:
+
+```python
+# From trifid/models/interpret.py:132-153
+@property
+def mutual_information(self):
+    df = pd.DataFrame(
+        mutual_info_classif(
+            self.train_features, 
+            self.train_target,
+            random_state=self.random_state
+        ),
+        index=self.train_features.columns,
+    ).reset_index().rename(
+        columns={'index': 'feature', 0: 'mutual_information'}
+    ).sort_values(by='mutual_information', ascending=False)
+    return df
+```
+
+**Interpretation:**
+- Higher MI → stronger relationship with functionality
+- MI = 0 → feature provides no information
+- Non-linear relationships captured
+
+### Target Permutation
+
+Tests whether feature importances are real or spurious:
+
+```python
+# From trifid/models/interpret.py:208-255
+@property
+def target_permutation(self):
+    # Shuffle target labels
+    # Retrain model on permuted data
+    # Compare importances to real data
+    # High ratio = real importance
+    # Low ratio = spurious correlation
+    return df
+```
+
+**Use case:** Validate that important features aren't just correlated by chance.
+
+## Comprehensive Interpretation Workflow
+
+### Step-by-Step Analysis
+
+<Steps>
+  <Step title="Train and evaluate model">
+    ```python
+    from trifid.models.select import Classifier
+    
+    model = Classifier(
+        model=RandomForestClassifier(n_estimators=400, random_state=123),
+        df=df_training_set,
+        features_col=features,
+        target_col='label',
+        random_state=123
+    )
+    
+    # Check performance
+    print(model.evaluate)
+    print(model.confusion_matrix)
+    ```
+  </Step>
+
+  <Step title="Calculate feature importances">
+    ```python
+    from trifid.models.interpret import TreeInterpretation
+    
+    interpreter = TreeInterpretation(
+        model=model.model,
+        df=df_training_set,
+        features_col=features,
+        target_col='label'
+    )
+    
+    # Get all importance metrics
+    df_imp = interpreter.merge_feature_importances
+    
+    # Save for later reference
+    df_imp.to_csv('feature_importances.tsv', sep='\t', index=False)
+    ```
+  </Step>
+
+  <Step title="Visualize global importances">
+    ```python
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    
+    # Get SHAP importances
+    df_shap = interpreter.shap
+    
+    # Create barplot
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.barplot(
+        data=df_shap.head(20), 
+        x='shap', 
+        y='feature',
+        palette='viridis',
+        ax=ax
+    )
+    ax.set_xlabel('Mean |SHAP value|', fontsize=12)
+    ax.set_ylabel('Feature', fontsize=12)
+    ax.set_title('Feature Importance (SHAP)', fontsize=14)
+    plt.tight_layout()
+    plt.savefig('global_importance.png', dpi=300)
+    ```
+  </Step>
+
+  <Step title="Explain individual predictions">
+    ```python
+    # Load full database
+    df_full = pd.read_csv(
+        'data/genomes/GRCh38/g27/trifid_predictions.tsv.gz',
+        sep='\t'
+    )
+    
+    # Find interesting cases
+    high_score = df_full.nlargest(1, 'trifid_score')['transcript_id'].iloc[0]
+    low_score = df_full.nsmallest(1, 'trifid_score')['transcript_id'].iloc[0]
+    
+    # Explain both
+    for tid in [high_score, low_score]:
+        print(f"\nExplanation for {tid}:")
+        exp = interpreter.local_explanation(
+            df_features=df_full,
+            sample=tid
+        )
+        print(exp.head(10))
+    ```
+  </Step>
+
+  <Step title="Generate waterfall plots">
+    ```python
+    # Create waterfall for specific transcript
+    interpreter.local_explanation(
+        df_features=df_full,
+        sample='ENST00000380152',
+        waterfall=True
+    )
+    ```
+  </Step>
+</Steps>
+
+## Visualization Recipes
+
+### 1. Feature Importance Comparison
+
+Compare multiple importance metrics:
+
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Get different importance scores
+df_sklearn = interpreter.feature_importances
+df_perm = interpreter.permutation_importances
+df_shap = interpreter.shap
+
+# Merge
+df_compare = pd.merge(df_sklearn, df_perm, on='feature')
+df_compare = pd.merge(df_compare, df_shap, on='feature')
+
+# Normalize to 0-1 scale
+for col in df_compare.columns[1:]:
+    df_compare[f'{col}_norm'] = (
+        df_compare[col] / df_compare[col].max()
+    )
+
+# Plot
+fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
+methods = ['feature_importances_sklearn_norm', 
+           'permutation_importance_norm', 
+           'shap_norm']
+titles = ['Sklearn', 'Permutation', 'SHAP']
+
+for ax, method, title in zip(axes, methods, titles):
+    top_features = df_compare.nlargest(15, method)
+    sns.barplot(
+        data=top_features,
+        x=method,
+        y='feature',
+        ax=ax
+    )
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel('Normalized Importance')
+    if ax != axes[0]:
+        ax.set_ylabel('')
+
+plt.tight_layout()
+plt.savefig('importance_comparison.png', dpi=300)
+```
+
+### 2. Score Distribution by Feature
+
+Show how TRIFID scores vary with feature values:
+
+```python
+import numpy as np
+
+df = pd.read_csv('data/genomes/GRCh38/g27/trifid_predictions.tsv.gz', sep='\t')
+
+# Bin key feature
+feature = 'norm_spade'
+df['feature_bin'] = pd.cut(df[feature], bins=5, labels=['Very Low', 'Low', 'Medium', 'High', 'Very High'])
+
+# Plot
+fig, ax = plt.subplots(figsize=(10, 6))
+sns.boxplot(
+    data=df,
+    x='feature_bin',
+    y='trifid_score',
+    palette='RdYlGn',
+    ax=ax
+)
+ax.set_xlabel(f'{feature} (binned)', fontsize=12)
+ax.set_ylabel('TRIFID Score', fontsize=12)
+ax.set_title(f'TRIFID Score Distribution by {feature}', fontsize=14)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig(f'score_by_{feature}.png', dpi=300)
+```
+
+### 3. Isoform Comparison Heatmap
+
+Visualize feature values and SHAP contributions for gene isoforms:
+
+```python
+import numpy as np
+
+# Get all isoforms of a gene
+gene = 'TP53'
+df_gene = df_full[df_full['gene_name'] == gene]
+
+# Get SHAP explanations
+exp = interpreter.local_explanation(
+    df_features=df_full,
+    sample=gene
+).T
+
+# Create heatmap
+fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+
+# Feature values
+sns.heatmap(
+    df_gene[features].set_index(df_gene['transcript_id']).T,
+    cmap='viridis',
+    cbar_kws={'label': 'Feature Value'},
+    ax=axes[0]
+)
+axes[0].set_title(f'{gene} - Feature Values', fontsize=14)
+axes[0].set_ylabel('Feature')
+
+# SHAP contributions
+sns.heatmap(
+    exp.drop(['std', 'sum']),
+    cmap='RdBu_r',
+    center=0,
+    cbar_kws={'label': 'SHAP Value'},
+    ax=axes[1]
+)
+axes[1].set_title(f'{gene} - SHAP Contributions', fontsize=14)
+axes[1].set_ylabel('')
+
+plt.tight_layout()
+plt.savefig(f'{gene}_isoform_comparison.png', dpi=300)
+```
+
+## Common Interpretation Patterns
+
+### High Score Isoforms
+
+Typical characteristics of highly functional isoforms:
+
+```
+Feature               Value  Contribution
+--------------------  -----  ------------
+norm_spade            1.00   +0.15  ✓ Intact domains
+pfam_score            0.95   +0.12  ✓ Preserved Pfam
+length_delta_score    0.88   +0.08  ✓ Near full-length
+norm_RNA2sj_cds       0.92   +0.11  ✓ Strong RNA-seq support
+CCDS                  1.00   +0.06  ✓ In consensus set
+```
+
+### Low Score Isoforms
+
+Common reasons for low functionality scores:
+
+```
+Feature               Value  Contribution
+--------------------  -----  ------------
+pfam_score            0.15   -0.18  ✗ Damaged domains
+norm_RNA2sj_cds       0.03   -0.15  ✗ No RNA-seq support
+length_delta_score    0.45   -0.09  ✗ Truncated
+perc_Lost_State       0.40   -0.08  ✗ Lost domain states
+StartEnd_NF           1.00   -0.12  ✗ Incomplete annotation
+```
+
+### Ambiguous Cases
+
+Transcripts with mixed signals:
+
+```
+Feature               Value  Contribution  Notes
+--------------------  -----  ------------  -----
+norm_spade            0.75   +0.08        Moderate domains ⚠️
+norm_RNA2sj_cds       0.12   -0.09        Low expression ✗
+length_delta_score    0.91   +0.09        Full-length ✓
+pfam_score            0.82   +0.06        Mostly intact ✓
+
+Final score: 0.54  →  Context-dependent functionality
+```
+
+## Exporting Interpretations
+
+### Generate Interpretation Report
+
+```python
+def generate_interpretation_report(interpreter, df_full, gene_name, output_dir='reports'):
+    import os
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # 1. Global importances
+    df_imp = interpreter.shap
+    df_imp.to_csv(f'{output_dir}/global_importances.tsv', sep='\t', index=False)
+    
+    # 2. Gene-level explanation
+    exp = interpreter.local_explanation(df_features=df_full, sample=gene_name)
+    exp.to_csv(f'{output_dir}/{gene_name}_explanation.tsv', sep='\t')
+    
+    # 3. Generate plots
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(data=df_imp.head(15), x='shap', y='feature', ax=ax)
+    ax.set_title('Feature Importance (SHAP)')
+    plt.tight_layout()
+    plt.savefig(f'{output_dir}/importance.png', dpi=300)
+    plt.close()
+    
+    print(f"Report generated in {output_dir}/")
+
+# Use it
+generate_interpretation_report(
+    interpreter=interpreter,
+    df_full=df_predictions,
+    gene_name='TP53',
+    output_dir='reports/TP53'
+)
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Always validate globally before locally" icon="globe">
+    Check global feature importances first. If a feature ranks low globally but high locally, investigate why.
+  </Card>
+  
+  <Card title="Use multiple importance metrics" icon="chart-simple">
+    Don't rely on a single method. Combine SHAP, permutation, and drop-column importances for robust insights.
+  </Card>
+  
+  <Card title="Consider biological context" icon="dna">
+    A low TRIFID score doesn't always mean non-functional. Consider tissue-specific expression and regulatory context.
+  </Card>
+  
+  <Card title="Validate with experiments" icon="flask">
+    Use interpretations to design experiments, not replace them. Test predictions with functional assays.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### SHAP Values Don't Sum to Prediction
+
+**Expected:** SHAP values should sum to (prediction - base_value)
+
+**If not:**
+- Check for missing features in explanation
+- Verify model hasn't changed since training
+- Ensure using same feature order
+
+### Inconsistent Importance Rankings
+
+**Cause:** Different methods measure different aspects of importance
+
+**Solution:** 
+- Sklearn: measures impurity decrease (fast but biased)
+- Permutation: measures predictive power (slower but unbiased)
+- SHAP: measures contribution to individual predictions (most comprehensive)
+
+Focus on SHAP for publication.
+
+### Memory Errors with SHAP
+
+**Problem:** SHAP calculations exhaust memory
+
+**Solutions:**
+```python
+# Calculate SHAP in batches
+import numpy as np
+
+explainer = shap.TreeExplainer(model)
+batch_size = 100
+shap_values_list = []
+
+for i in range(0, len(df), batch_size):
+    batch = df.iloc[i:i+batch_size]
+    shap_batch = explainer.shap_values(batch[features])
+    shap_values_list.append(shap_batch)
+
+shap_values = np.vstack(shap_values_list)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Visualization Module" icon="chart-mixed" href="/api-reference/visualization">
+    Advanced plotting functions for TRIFID results
+  </Card>
+  <Card title="Case Studies" icon="book" href="/examples/case-studies">
+    Real-world examples of TRIFID interpretation
+  </Card>
+</CardGroup>

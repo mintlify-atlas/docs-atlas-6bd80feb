@@ -1,0 +1,557 @@
+---
+title: 'Making Predictions'
+description: 'Apply trained models to generate functional scores for splice isoforms'
+icon: 'crystal-ball'
+---
+
+Once you have a trained model and prepared data, you can generate TRIFID scores for all transcripts in your genome. This guide covers the prediction workflow and score interpretation.
+
+## Overview
+
+The prediction process:
+
+1. Load a trained TRIFID model
+2. Prepare your feature database
+3. Handle missing values per genome assembly
+4. Generate predictions and confidence scores
+5. Export results for downstream analysis
+
+## Quick Start
+
+Generate predictions for human genome (GRCh38):
+
+```bash
+python -m trifid.models.predict \
+  --config config/config.yaml \
+  --features config/features.yaml \
+  --model models/trifid.v_1_0_4.pkl \
+  --assembly GRCh38 \
+  --release g27
+```
+
+This creates `trifid_predictions.tsv.gz` in your data directory.
+
+## Loading a Trained Model
+
+TRIFID supports multiple ways to load models.
+
+### Using a Saved Model File
+
+The prediction script loads serialized models:
+
+```python
+# From trifid/models/predict.py:176
+import pickle
+
+model = pickle.load(open(args.model, "rb"))
+```
+
+### Available Models
+
+**Default TRIFID models:**
+- `trifid.v_1_0_4.pkl`: Latest version trained on human data
+- `trifid.v_1_0_0.pkl`: Original published model
+
+**Your custom models:**
+- `models/custom_model.pkl`: From `--custom` training
+- `models/selected_model.pkl`: From `--model_selection`
+
+<Info>
+TRIFID models are scikit-learn RandomForestClassifier objects saved with pickle.
+</Info>
+
+## Preparing Features
+
+The prediction script needs to know which features your model expects.
+
+### Loading Feature Configuration
+
+```python
+# From trifid/models/predict.py:174-178
+config = parse_yaml(args.config)
+df_features = pd.DataFrame(parse_yaml(args.features))
+
+# Extract feature names (exclude identifiers)
+features = df_features[
+    ~df_features["category"].str.contains("Identifier")
+]["feature"].values
+
+# Extract identifier columns
+ids = df_features[
+    df_features["category"].str.contains("Identifier")
+]["feature"].values
+```
+
+### Required vs Optional Features
+
+**Always required:**
+- Transcript identifiers (`transcript_id`, `gene_id`, `gene_name`)
+- Structural features (`length`)
+- At least one scoring feature
+
+**Commonly used:**
+- `norm_spade`: APPRIS domain integrity
+- `norm_RNA2sj_cds`: Splice junction support
+- `pfam_score`: Pfam domain conservation
+- `length_delta_score`: Length relative to reference
+
+<Warning>
+The features used for prediction must exactly match those used during training.
+</Warning>
+
+## Handling Missing Values
+
+Different genome assemblies have different data availability. TRIFID handles this intelligently.
+
+### Assembly-Specific Strategies
+
+The prediction script implements specialized handling per assembly:
+
+<CodeGroup>
+```python Human GRCh38 (GENCODE)
+# From trifid/models/predict.py:43-45
+if assembly == "GRCh38" and release.startswith("g"):
+    pass  # No special handling needed - all features available
+```
+
+```python Human GRCh37 (GENCODE)
+# From trifid/models/predict.py:46-47
+elif assembly == "GRCh37" and release.startswith("g"):
+    # Fill all missing values with -1
+    df[df.columns[df.isna().any()].tolist()] = \
+        df[df.columns[df.isna().any()].tolist()].fillna(-1)
+```
+
+```python Mouse GRCm39
+# From trifid/models/predict.py:69-71
+elif assembly == "GRCm39":
+    features_missing = ["RNA2sj_cds", "norm_RNA2sj_cds"]
+    df[features_missing] = df[features_missing].fillna(-1)
+```
+
+```python Other organisms
+# From trifid/models/predict.py:77-88
+elif assembly == "Rnor_6.0":  # Rat
+    # Drop CCDS, use ACDS instead
+    df = df.drop("CCDS", axis=1)
+    df_acds = pd.read_csv(
+        os.path.join("data", "external", "ACDS", "Rnor_6.0", "e104", "acds.tsv.gz"),
+        sep="\t", compression="gzip"
+    )
+    df = pd.merge(df, df_acds[["transcript_id", "CCDS"]], 
+                  how="left", on="transcript_id")
+    df["CCDS"] = df["CCDS"].fillna(0)
+```
+</CodeGroup>
+
+### Supported Assemblies
+
+TRIFID has built-in support for:
+
+| Organism | Assembly | Annotation | Notes |
+|----------|----------|------------|-------|
+| Human | GRCh38 | GENCODE | Full feature support |
+| Human | GRCh37 | GENCODE | Legacy support |
+| Human | GRCh38 | RefSeq | Requires feature adjustments |
+| Mouse | GRCm39 | GENCODE | No RNA2sj for CDS |
+| Mouse | GRCm38 | GENCODE | Legacy support |
+| Rat | Rnor_6.0 | Ensembl | Uses ACDS instead of CCDS |
+| Zebrafish | GRCz11 | Ensembl | Limited features |
+| Pig | Sscrofa11.1 | Ensembl | Limited features |
+| Chimp | Pan_tro_3.0 | Ensembl | Limited features |
+| Chicken | GRCg6a | Ensembl | Limited features |
+| Cow | ARS-UCD1.2 | Ensembl | Limited features |
+| Fly | BDGP6 | Ensembl | Limited features |
+| Worm | WBcel235 | Ensembl | All features set to 0 if missing |
+
+## Generating Predictions
+
+The core prediction function generates scores for all transcripts.
+
+### Main Prediction Function
+
+```python
+# From trifid/models/predict.py:32-40
+def make_predictions(
+    features: list, 
+    ids: list, 
+    config: dict, 
+    model: object, 
+    assembly: str, 
+    release: str
+):
+    # Load TRIFID database
+    data_dir = os.path.join(
+        "data", "genomes", 
+        config["annotation"]["genome_version"], 
+        config["annotation"]["db"]
+    )
+    df = pd.read_csv(
+        os.path.join(data_dir, "trifid_db.tsv.gz"), 
+        sep="\t", compression="gzip"
+    )
+```
+
+### Score Calculation
+
+TRIFID generates both raw and normalized scores:
+
+```python
+# From trifid/utils/utils.py:267-296
+def generate_trifid_metrics(
+    df: pd.DataFrame, 
+    features: pd.DataFrame, 
+    model: object,
+    nmax_norm_median: bool = False
+) -> pd.DataFrame:
+    # Generate probability scores
+    df["trifid_score"] = model.predict_proba(features)[:, 1]
+    
+    # Normalize scores per gene
+    df["norm_trifid_score"] = df.groupby("gene_id")["trifid_score"].transform(
+        lambda x: 0 if (x == 0).all()
+        else (1 if ((len(set(x)) == 1) & (x >= 0.5).all()) 
+        else (x) / (max(0.5, x.max())))
+    )
+    
+    # Round to 4 decimal places
+    df = df.round({"trifid_score": 4, "norm_trifid_score": 4})
+    
+    return df
+```
+
+<Steps>
+  <Step title="Raw prediction">
+    Model outputs probability that transcript is functional (0-1 scale).
+  </Step>
+
+  <Step title="Gene-level normalization">
+    Scores are normalized within each gene to highlight the most functional isoform.
+  </Step>
+
+  <Step title="Edge case handling">
+    - All zeros → Keep as 0
+    - All high scores → Keep as 1
+    - Otherwise → Normalize to [0, 1]
+  </Step>
+</Steps>
+
+## Output Format
+
+Predictions are saved as a compressed TSV file.
+
+### Output Columns
+
+The final predictions file contains:
+
+```python
+# From trifid/models/predict.py:139-151
+labels = [
+    "gene_id",
+    "gene_name",
+    "transcript_id",
+    "translation_id",
+    "flags",
+    "ccdsid",
+    "appris",
+    "ann_type",
+    "length",
+    "trifid_score",
+    "norm_trifid_score",
+]
+```
+
+### Example Output
+
+```tsv
+gene_id          gene_name  transcript_id    trifid_score  norm_trifid_score
+ENSG00000139618  BRCA2      ENST00000380152  0.9234        1.0000
+ENSG00000139618  BRCA2      ENST00000544455  0.2341        0.2535
+ENSG00000139618  BRCA2      ENST00000614259  0.7823        0.8473
+ENSG00000141510  TP53       ENST00000269305  0.8912        1.0000
+ENSG00000141510  TP53       ENST00000420246  0.3421        0.3839
+```
+
+### File Location
+
+```python
+# From trifid/models/predict.py:152-154
+df_predictions[labels].to_csv(
+    os.path.join(data_dir, "trifid_predictions.tsv.gz"),
+    index=None, sep="\t", compression="gzip"
+)
+```
+
+Default path: `data/genomes/{assembly}/{release}/trifid_predictions.tsv.gz`
+
+## Score Interpretation
+
+### TRIFID Score (Raw)
+
+**Range:** 0.0 - 1.0
+
+**Interpretation:**
+- **> 0.8**: High confidence functional
+- **0.5 - 0.8**: Likely functional
+- **0.2 - 0.5**: Uncertain/context-dependent
+- **< 0.2**: Likely non-functional
+
+**Use cases:**
+- Comparing isoforms across different genes
+- Setting genome-wide functional cutoffs
+- Prioritizing isoforms for experimental validation
+
+### Normalized TRIFID Score (Gene-Relative)
+
+**Range:** 0.0 - 1.0
+
+**Interpretation:**
+- **1.0**: Most functional isoform of the gene
+- **0.5 - 0.99**: Partially functional isoform
+- **< 0.5**: Less functional relative to gene's main isoform
+
+**Use cases:**
+- Identifying the principal functional isoform per gene
+- Quantifying isoform switching effects
+- Gene-centric functional analyses
+
+<Info>
+For most analyses, use `norm_trifid_score` to compare isoforms within a gene, and `trifid_score` to compare across genes.
+</Info>
+
+## Batch Predictions
+
+For multiple genomes or conditions:
+
+### Scripted Workflow
+
+```bash
+#!/bin/bash
+# predict_all.sh
+
+GENOMES=("GRCh38" "GRCh37" "GRCm39")
+RELEASES=("g27" "g27" "gM25")
+
+for i in ${!GENOMES[@]}; do
+  echo "Processing ${GENOMES[$i]} ${RELEASES[$i]}..."
+  
+  python -m trifid.models.predict \
+    --config config/config.yaml \
+    --features config/features.yaml \
+    --model models/trifid.v_1_0_4.pkl \
+    --assembly ${GENOMES[$i]} \
+    --release ${RELEASES[$i]}
+  
+  echo "Done: ${GENOMES[$i]}"
+done
+```
+
+### Python Script
+
+```python
+# batch_predict.py
+import os
+from trifid.models.predict import make_predictions
+from trifid.utils.utils import parse_yaml
+import pickle
+import pandas as pd
+
+# Configuration
+config = parse_yaml('config/config.yaml')
+df_features = pd.DataFrame(parse_yaml('config/features.yaml'))
+model = pickle.load(open('models/trifid.v_1_0_4.pkl', 'rb'))
+
+features = df_features[
+    ~df_features["category"].str.contains("Identifier")
+]["feature"].values
+ids = df_features[
+    df_features["category"].str.contains("Identifier")
+]["feature"].values
+
+# Run predictions
+genomes = [
+    ("GRCh38", "g27"),
+    ("GRCm39", "gM25"),
+]
+
+for assembly, release in genomes:
+    print(f"Predicting {assembly} {release}...")
+    make_predictions(features, ids, config, model, assembly, release)
+    print(f"Complete: {assembly}")
+```
+
+## Integrating with Workflows
+
+### Loading Predictions in Python
+
+```python
+import pandas as pd
+
+# Load predictions
+df = pd.read_csv(
+    'data/genomes/GRCh38/g27/trifid_predictions.tsv.gz',
+    sep='\t',
+    compression='gzip'
+)
+
+# Filter functional isoforms
+functional = df[df['trifid_score'] > 0.8]
+
+# Get top isoform per gene
+top_isoforms = df.loc[
+    df.groupby('gene_id')['norm_trifid_score'].idxmax()
+]
+
+print(f"Total transcripts: {len(df)}")
+print(f"Functional (>0.8): {len(functional)}")
+print(f"Top isoforms: {len(top_isoforms)}")
+```
+
+### Downstream Analysis
+
+```python
+# Compare TRIFID scores with APPRIS annotations
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+principal = df[df['appris'].str.contains('PRINCIPAL', na=False)]
+alternative = df[~df['appris'].str.contains('PRINCIPAL', na=False)]
+
+plt.figure(figsize=(10, 6))
+sns.boxplot(data=[
+    principal['trifid_score'],
+    alternative['trifid_score']
+], labels=['PRINCIPAL', 'ALTERNATIVE'])
+plt.ylabel('TRIFID Score')
+plt.title('TRIFID Scores by APPRIS Annotation')
+plt.show()
+```
+
+### Export for IGV
+
+Create a BED file colored by TRIFID score:
+
+```python
+# Load GTF for coordinates
+from trifid.data.loaders import load_annotation
+
+df_gtf = load_annotation(
+    'data/genomes/GRCh38/g27/gencode.v27.annotation.gtf.gz',
+    db='g'
+)
+
+# Merge with predictions
+df_viz = pd.merge(
+    df_gtf[['transcript_id', 'seqname', 'start', 'end', 'strand']],
+    df[['transcript_id', 'trifid_score']],
+    on='transcript_id'
+)
+
+# Convert score to RGB color (0=red, 1=green)
+df_viz['color'] = df_viz['trifid_score'].apply(
+    lambda x: f"{int((1-x)*255)},{int(x*255)},0"
+)
+
+# Export BED
+df_viz[['seqname', 'start', 'end', 'transcript_id', 
+        'trifid_score', 'strand', 'start', 'end', 'color']].to_csv(
+    'trifid_scores.bed',
+    sep='\t',
+    header=False,
+    index=False
+)
+```
+
+## Performance Considerations
+
+### Speed Optimization
+
+**For large genomes:**
+- Predictions are fast (seconds to minutes)
+- Bottleneck is usually I/O, not computation
+- Use SSD storage for data files
+
+**Timing examples:**
+- Human genome (~200k transcripts): ~2-5 minutes
+- Mouse genome (~150k transcripts): ~1-3 minutes
+
+### Memory Usage
+
+**Typical requirements:**
+- Human genome: ~2-4 GB RAM
+- Mouse genome: ~1-2 GB RAM
+
+**If you encounter memory errors:**
+1. Process chromosomes separately
+2. Use chunked reading with pandas
+3. Reduce number of features loaded
+
+## Troubleshooting
+
+### Model Loading Errors
+
+**Error:** `pickle.UnpicklingError`
+
+**Cause:** Model file corrupted or from incompatible scikit-learn version
+
+**Solution:**
+```bash
+# Check scikit-learn version
+python -c "import sklearn; print(sklearn.__version__)"
+
+# Retrain model with current version
+python -m trifid.models.train --features config/features.yaml --custom
+```
+
+### Feature Mismatch Errors
+
+**Error:** `KeyError: 'norm_RNA2sj_cds'`
+
+**Cause:** Feature in model but not in database
+
+**Solution:**
+1. Check features.yaml matches training configuration
+2. Verify all preprocessing steps completed
+3. Use `--custom` mode with matching features
+
+### Missing Predictions
+
+**Problem:** Some transcripts have NaN scores
+
+**Cause:** Missing values in required features
+
+**Solution:**
+```python
+# Check for missing values
+df = pd.read_csv('data/genomes/GRCh38/g27/trifid_db.tsv.gz', sep='\t')
+print(df[features].isnull().sum())
+
+# Impute or remove
+df[features] = df[features].fillna(-1)  # or
+df = df.dropna(subset=features)
+```
+
+### Score Distribution Issues
+
+**Problem:** All scores near 0.5
+
+**Cause:** Model not confident, possibly due to:
+- Poor training
+- Feature distribution shift
+- Missing key features
+
+**Solution:**
+1. Retrain with more data
+2. Check feature distributions match training data
+3. Use model interpretation (see next guide)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Interpret Results" icon="chart-line" href="/guides/interpreting-results">
+    Understand TRIFID scores with SHAP explanations
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/models/predict">
+    Detailed API documentation for predictions
+  </Card>
+</CardGroup>

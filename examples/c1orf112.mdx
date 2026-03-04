@@ -1,0 +1,200 @@
+---
+title: 'C1orf112 Case Study'
+description: 'QSplice module analysis for Chromosome 1 Open Reading Frame 112'
+---
+
+# C1orf112: Chromosome 1 Open Reading Frame 112
+
+[ENSG00000000460](https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000000460;r=1:169662007-169854080) (Ensembl) - [Q9NSG2 (CA112_HUMAN)](https://www.uniprot.org/uniprot/Q9NSG2) (UniProt)
+
+## Overview
+
+This case study demonstrates the **QSplice** module of TRIFID, which quantifies splice junction coverage from RNA-seq data. C1orf112 serves as an excellent example of how RNA-seq evidence contributes to isoform functionality predictions.
+
+## What is QSplice?
+
+QSplice is a TRIFID module that:
+- Quantifies splice junction coverage from STAR RNA-seq alignments
+- Maps unique reads to genome positions using collapsed coding splice junctions
+- Calculates coverage scores per transcript
+- Integrates with TRIFID's machine learning model as predictive features
+
+## QSplice Methodology
+
+### Input Data
+
+1. **Genome annotation**: GENCODE GFF3 file
+2. **RNA-seq samples**: STAR `SJ.out.tab` files from [E-MTAB-2836](https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-2836/)
+   - 32 human tissues
+   - 122 individuals
+   - Comprehensive tissue expression atlas
+
+### Running QSplice
+
+```bash
+python -m trifid.preprocessing.qsplice \
+    --gff data/external/genome_annotation/GRCh38/g27/gencode.v27.annotation.gff3.gz \
+    --outdir data/external/qsplice/GRCh38/g27 \
+    --samples out/E-MTAB-2836/GRCh38/STAR/g27 \
+    --version g
+```
+
+### Output Files
+
+1. **`sj_maxp.emtab2836.mapped.tsv.gz`**: Splice junction-level scores
+2. **`qsplice.emtab2836.g27.tsv.gz`**: Transcript-level scores (TRIFID input)
+
+## C1orf112 Splice Junction Analysis
+
+### Splice Junction Scores for ENST00000472795
+
+| Chromosome | Type   | Start      | End        | Strand | Gene ID         | Gene Name | Transcript ID   | CDS Coverage | Intron # | Unique Reads | Tissue | Gene Mean | Gene Mean CDS | RNA2sj | RNA2sj_cds |
+|------------|--------|------------|------------|--------|-----------------|-----------|-----------------|--------------|----------|--------------|--------|-----------|---------------|--------|------------|
+| chr1       | intron | 169794906  | 169798856  | +      | ENSG00000000460 | C1orf112  | ENST00000472795 | none         | 1        | 2            | tonsil | 67.37     | 73.78         | 0.0297 | 0.0271     |
+| chr1       | intron | 169798959  | 169800882  | +      | ENSG00000000460 | C1orf112  | ENST00000472795 | none         | 2        | 69           | testis | 67.37     | 73.78         | 1.024  | 0.9352     |
+| chr1       | intron | 169800972  | 169802620  | +      | ENSG00000000460 | C1orf112  | ENST00000472795 | full         | 3        | 74           | testis | 67.37     | 73.78         | 1.098  | 1.0029     |
+| chr1       | intron | 169802726  | 169803168  | +      | ENSG00000000460 | C1orf112  | ENST00000472795 | full         | 4        | 77           | testis | 67.37     | 73.78         | 1.143  | 1.0436     |
+| **chr1**   | **intron** | **169803310** | **169804074** | **+** | **ENSG00000000460** | **C1orf112** | **ENST00000472795** | **full** | **5** | **57** | **testis** | **67.37** | **73.78** | **0.846** | **0.7725** |
+
+### Key Observations
+
+1. **Maximum coverage selection**: QSplice selects the junction with maximum coverage (intron 5) across all tissues
+2. **Unique reads**: Junction 5 has 57 unique reads in testis (the tissue with highest expression)
+3. **Minimum bottleneck**: This junction represents the **lowest coverage** among coding splice junctions for this isoform
+4. **Normalized score**: RNA2sj = 57 / 67.37 = 0.846
+
+<Note>
+  QSplice identifies the "weakest link" in the splice junction chain, providing a conservative estimate of transcript expression.
+</Note>
+
+## Transcript-Level QSplice Scores
+
+### C1orf112 Isoform Comparison
+
+| Chromosome | Gene ID         | Gene Name | Transcript ID   | Intron # | Exons | CDS Exons | Unique Reads | Tissue          | RNA2sj | RNA2sj_cds |
+|------------|-----------------|-----------|-----------------|----------|-------|-----------|--------------|-----------------|--------|------------|
+| chr1       | ENSG00000000460 | C1orf112  | ENST00000286031 | 6        | 24    | 22        | 53           | testis          | 0.787  | 0.718      |
+| chr1       | ENSG00000000460 | C1orf112  | ENST00000359326 | 7        | 25    | 22        | 53           | testis          | 0.787  | 0.718      |
+| chr1       | ENSG00000000460 | C1orf112  | ENST00000413811 | 20       | 23    | 14        | 62           | testis          | 0.920  | 0.840      |
+| chr1       | ENSG00000000460 | C1orf112  | ENST00000459772 | 2        | 23    | 3         | 7            | fallopian tube  | 0.104  | 0.095      |
+| chr1       | ENSG00000000460 | C1orf112  | ENST00000466580 | 2        | 8     | 3         | 7            | fallopian tube  | 0.104  | 0.095      |
+| **chr1**   | **ENSG00000000460** | **C1orf112** | **ENST00000472795** | **5** | **6** | **4** | **57** | **testis** | **0.846** | **0.773** |
+| chr1       | ENSG00000000460 | C1orf112  | ENST00000481744 | 2        | 7     | 3         | 7            | fallopian tube  | 0.104  | 0.095      |
+| chr1       | ENSG00000000460 | C1orf112  | ENST00000496973 | 5        | 6     | 6         | 8            | tonsil          | 0.119  | 0.108      |
+| chr1       | ENSG00000000460 | C1orf112  | ENST00000498289 | 3        | 29    | 0         | 0            | -               | 0      | 0          |
+
+### Interpretation
+
+- **ENST00000472795**: Moderate RNA2sj score (0.846) indicates good expression support
+- **Tissue specificity**: Highest expression in testis
+- **Low-scoring isoforms**: Some isoforms show minimal expression (< 0.1), suggesting limited functional relevance
+- **Non-coding isoform**: ENST00000498289 has 0 CDS exons and no expression
+
+## Visual Representation
+
+### ENST00000472795 Exon Structure
+
+```
+Exon 1  |Intron 1| Exon 2  |Intron 2| Exon 3  |Intron 3| Exon 4  |Intron 4| Exon 5  |Intron 5| Exon 6
+   |        2        |        69       |        74       |        77       |   57*  |
+  5'UTR           CDS Start                                              Bottleneck    CDS End
+```
+
+**\* Junction 5 (57 reads) is the bottleneck** - the minimum coverage determines the transcript-level score.
+
+## QSplice Features in TRIFID
+
+QSplice generates two main features used in TRIFID:
+
+1. **RNA2sj**: Unique reads divided by gene average (all splice junctions)
+2. **RNA2sj_cds**: Unique reads divided by gene average (only CDS-spanning junctions)
+
+These features contribute to TRIFID predictions by providing:
+- Expression evidence for isoform existence
+- Tissue-specific functional context
+- Quantitative support beyond annotation
+
+## Running QSplice on Your Data
+
+### Using STAR SJ.out.tab Files
+
+```bash
+# With pre-computed STAR alignments
+python -m trifid.preprocessing.qsplice \
+    --gff your_annotation.gff3.gz \
+    --outdir output/qsplice \
+    --samples path/to/star/output \
+    --version g
+```
+
+### Using Custom Splice Junction File
+
+```bash
+# With custom SJ.out.tab
+python -m trifid.preprocessing.qsplice \
+    --gff your_annotation.gff3.gz \
+    --outdir output/qsplice \
+    --custom custom_SJ.out.tab \
+    --version g
+```
+
+## Integration with TRIFID Predictions
+
+QSplice scores are integrated into the full TRIFID feature set alongside:
+- APPRIS structural annotations
+- PhyloCSF conservation scores
+- Pfam domain effects
+- Transcript Support Levels (TSL)
+- GENCODE basic annotation
+
+The Random Forest model learns the importance of RNA-seq evidence relative to other features, automatically weighting expression support appropriately.
+
+## Pre-computed QSplice Data
+
+Pre-computed QSplice scores are available for:
+- GENCODE 27 (Human, GRCh38)
+- GENCODE 42 (Human, GRCh38)
+- GENCODE 25 (Mouse, GRCm38)
+- Various other genome versions
+
+See the [Data Availability](/resources/data) page for download links.
+
+## Code Example: Analyzing QSplice Results
+
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Load QSplice results
+qsplice = pd.read_csv(
+    'data/external/qsplice/GRCh38/g27/qsplice.emtab2836.g27.tsv.gz',
+    sep='\t',
+    compression='gzip'
+)
+
+# Filter for gene of interest
+gene_data = qsplice[qsplice['gene_name'] == 'C1orf112']
+
+# Plot RNA2sj scores
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.barh(gene_data['transcript_id'], gene_data['RNA2sj'])
+ax.set_xlabel('RNA2sj Score')
+ax.set_ylabel('Transcript ID')
+ax.set_title('C1orf112 Splice Junction Coverage Scores')
+ax.axvline(x=0.5, color='r', linestyle='--', label='Functional threshold')
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+## References
+
+- [E-MTAB-2836 RNA-seq Dataset](https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-2836/)
+- [STAR Aligner Manual](https://github.com/alexdobin/STAR/blob/master/doc/STARmanual.pdf)
+- [TRIFID RNA-seq Pipeline](https://github.com/fpozoc/appris_rnaseq)
+
+## Next Steps
+
+- Explore [NIPAL3 Pfam effects](/examples/nipal3)
+- Learn about [FGFR1 SHAP interpretation](/examples/fgfr1)
+- Run the [End-to-End Tutorial](/examples/end-to-end-tutorial)

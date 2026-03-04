@@ -1,0 +1,233 @@
+---
+title: qsplice
+description: Quantify splice junction coverage from STAR RNA-seq data and map to genome positions
+---
+
+## Overview
+
+The `qsplice` module quantifies splice junction coverage from RNA-seq data released by STAR and maps it to genome positions. It processes SJ.out.tab files, annotates introns, and generates quantitative splice junction scores per gene and transcript.
+
+## Usage
+
+```bash
+python -m trifid.preprocessing.qsplice \
+    --gff ~/data/genome_annotation/GRCh38/g27/gencode.v27.annotation.gff3.gz \
+    --outdir data/external/qsplice/GRCh38/g27 \
+    --samples /home/projects/rnaseq/out/E-MTAB-2836/GRCh38/STAR/g27 \
+    --version g27 \
+    --experiment emtab2836 \
+    --rm
+```
+
+## Command-Line Arguments
+
+<ParamField path="--gff" type="string" required>
+  Custom or GENCODE/Ensembl gff annotation file (gzip compressed)
+</ParamField>
+
+<ParamField path="--outdir" type="string" required>
+  Output directory where results will be stored
+</ParamField>
+
+<ParamField path="--samples" type="string">
+  Directory containing SJ.out.tab files to be globbed and concatenated. Pattern: `{samples}/*/SJ.out.tab`
+</ParamField>
+
+<ParamField path="--version" type="string" required>
+  Genome annotation version. For GENCODE: `g` + version number (e.g., `g27`)
+</ParamField>
+
+<ParamField path="--experiment" type="string" default="emtab2836">
+  Experiment identifier for output file naming
+</ParamField>
+
+<ParamField path="--file" type="string">
+  Custom splice junctions file (gzip compressed) to use instead of globbing samples directory
+</ParamField>
+
+<ParamField path="--tissue_ids" type="string">
+  Path to file containing tissue identifiers for annotation
+</ParamField>
+
+<ParamField path="--rm" type="boolean" default="false">
+  If set, removes intermediate files after processing
+</ParamField>
+
+## Core Functions
+
+### generate_introns
+
+```python
+def generate_introns(inpath: str) -> str
+```
+
+Generates introns file from gff annotation using GenomeTools.
+
+<ParamField path="inpath" type="string">
+  Path to the gff annotation file
+</ParamField>
+
+**Returns:** `str` - Path where introns file has been stored
+
+---
+
+### load_annotations
+
+```python
+def load_annotations(filepath: str, db: str, features: list = ["CDS", "exon", "intron"]) -> pd.DataFrame
+```
+
+Loads features from genome annotation file.
+
+<ParamField path="filepath" type="string">
+  Path to .gff annotation file
+</ParamField>
+
+<ParamField path="db" type="string">
+  Annotation reference database (GENCODE, RefSeq, or UniProt)
+</ParamField>
+
+<ParamField path="features" type="list" default='["CDS", "exon", "intron"]'>
+  Feature annotations to filter from the gff file
+</ParamField>
+
+**Returns:** `pd.DataFrame` - Features extracted from gff with columns: seqname, type, start, end, strand, gene_id, gene_name, transcript_id, exon_id, exon_number
+
+---
+
+### annotate_introns
+
+```python
+def annotate_introns(df: pd.DataFrame) -> pd.DataFrame
+```
+
+Annotates introns with CDS positions by merging exons and CDS information.
+
+<ParamField path="df" type="pd.DataFrame">
+  Input DataFrame with whole introns annotation
+</ParamField>
+
+**Returns:** `pd.DataFrame` - DataFrame with introns annotated including CDS coverage information
+
+---
+
+### concat_samples
+
+```python
+def concat_samples(indir: str, tissue_ids: str) -> pd.DataFrame
+```
+
+Concatenates several SJ.out.tab files into a single pandas DataFrame.
+
+<ParamField path="indir" type="string">
+  Annotation file directory pattern (e.g., `{samples}/*/SJ.out.tab`)
+</ParamField>
+
+<ParamField path="tissue_ids" type="string">
+  Path to samples identifiers file for tissue annotation
+</ParamField>
+
+**Returns:** `pd.DataFrame` - Concatenated SJ.out.tab data with tissue annotations
+
+---
+
+### map_junctions_positions
+
+```python
+def map_junctions_positions(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
+```
+
+Extracts the highest coverage per junction position and per tissue.
+
+<ParamField path="df" type="pd.DataFrame">
+  DataFrame with concatenated RNA-seq splice junctions and reads
+</ParamField>
+
+**Returns:** Tuple of two DataFrames:
+- `df_sj_max_position` - Maximum coverage per junction position
+- `df_sj_max_tissue` - Maximum coverage per junction position and tissue
+
+---
+
+### score_per_junction
+
+```python
+def score_per_junction(df_introns: pd.DataFrame, df_sj_max_position: pd.DataFrame) -> pd.DataFrame
+```
+
+Calculates means and scores per junction.
+
+<ParamField path="df_introns" type="pd.DataFrame">
+  DataFrame with introns annotations
+</ParamField>
+
+<ParamField path="df_sj_max_position" type="pd.DataFrame">
+  DataFrame with junction read positions and maximum coverage
+</ParamField>
+
+**Returns:** `pd.DataFrame` - DataFrame with scores per exon, gene, and transcript including:
+- `unique_reads` - Number of unique reads
+- `gene_mean` - Mean reads per gene
+- `gene_mean_cds` - Mean reads for CDS regions per gene
+- `RNA2sj` - Ratio of unique reads to gene mean
+- `RNA2sj_cds` - Ratio of unique reads to gene mean CDS
+
+---
+
+### score_per_transcript
+
+```python
+def score_per_transcript(df: pd.DataFrame) -> pd.DataFrame
+```
+
+Calculates minimum junction scores per transcript (qsplice output).
+
+<ParamField path="df" type="pd.DataFrame">
+  DataFrame with score per junction
+</ParamField>
+
+**Returns:** `pd.DataFrame` - Final qsplice scores per transcript
+
+## Output Files
+
+The module generates several output files in the specified output directory:
+
+### sj_maxp.{experiment}.tsv.gz
+Maximum splice junction coverage per position
+
+### sj_maxt.{experiment}.tsv.gz
+Maximum splice junction coverage per tissue and position
+
+### sj_maxp.{experiment}.mapped.tsv.gz
+Splice junctions mapped to gene annotations with scores
+
+### qsplice.{experiment}.tsv.gz
+**Main output file** containing quantitative splice junction scores per transcript with columns:
+- `seqname` - Chromosome/sequence name
+- `gene_id` - Gene identifier
+- `gene_name` - Gene name
+- `transcript_id` - Transcript identifier
+- `intron_number` - Intron number
+- `unique_reads` - Number of unique reads (minimum per transcript)
+- `tissue` - Tissue where maximum expression was observed
+- `gene_mean` - Mean coverage across gene
+- `gene_mean_cds` - Mean coverage for CDS regions
+- `RNA2sj` - RNA-to-splice junction ratio
+- `RNA2sj_cds` - RNA-to-splice junction ratio for CDS regions
+
+## Example Workflow
+
+1. **Generate introns** from GFF annotation using GenomeTools
+2. **Load annotations** and filter for CDS, exons, and introns
+3. **Annotate introns** with CDS coverage information
+4. **Concatenate RNA-seq samples** from STAR SJ.out.tab files
+5. **Map junction positions** to get maximum coverage
+6. **Score junctions** by merging annotations with coverage data
+7. **Score transcripts** by finding minimum junction score per transcript
+
+## Notes
+
+- Requires GenomeTools (`gt`) to be installed for intron generation
+- Input SJ.out.tab files should follow STAR aligner output format
+- The module uses the minimum junction score per transcript as the transcript-level score
+- CDS coverage is classified as: `full`, `partial`, or `none`

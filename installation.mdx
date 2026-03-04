@@ -1,0 +1,263 @@
+---
+title: Installation
+description: Install TRIFID or download pre-computed predictions for your genome of interest
+---
+
+## Quick Installation
+
+The simplest way to get started with TRIFID is to install it via pip directly from GitHub:
+
+```bash
+pip install git+https://github.com/fpozoc/trifid.git
+```
+
+This method is ideal if you want to:
+- Use TRIFID's preprocessing modules (QSplice, Pfam effects)
+- Load and analyze pre-computed predictions
+- Integrate TRIFID into your analysis pipeline
+
+## Development Installation
+
+For development work or to reproduce the complete TRIFID methodology from scratch, follow these steps:
+
+<Steps>
+  <Step title="Install Conda/Mamba">
+    First, ensure you have Miniconda or Anaconda with mamba installed. If not, install Miniconda:
+
+    ```bash
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda3
+    ```
+
+    <Tip>
+    Install mamba for faster dependency resolution:
+    ```bash
+    conda install -c conda-forge mamba
+    ```
+    </Tip>
+  </Step>
+
+  <Step title="Clone the Repository">
+    Clone the TRIFID repository and navigate to the directory:
+
+    ```bash
+    git clone git@github.com:fpozoc/trifid.git
+    cd trifid
+    ```
+  </Step>
+
+  <Step title="Create Environment">
+    Create the conda environment from the provided configuration:
+
+    ```bash
+    mamba env create -f environment.yml
+    conda activate trifid
+    ```
+  </Step>
+
+  <Step title="Install Pre-commit Hooks">
+    Set up development tools and pre-commit hooks:
+
+    ```bash
+    pre-commit install
+    ```
+  </Step>
+</Steps>
+
+### Verify Installation
+
+Test that everything is working correctly:
+
+```bash
+# Run pre-commit checks
+pre-commit run --all-files
+
+# Run tests
+pytest -v
+```
+
+## System Requirements
+
+<Info>
+**Minimum Requirements:**
+- Python 3.7+
+- 8GB RAM (16GB recommended for genome-wide analysis)
+- Linux or macOS (Windows via WSL)
+</Info>
+
+### Core Dependencies
+
+TRIFID requires the following Python packages:
+
+<CodeGroup>
+```txt Core
+biopython
+numpy
+pandas>=1.0
+scikit-learn
+joblib
+cython
+pyyaml
+gtfparse
+loguru
+muscle
+```
+
+```txt Development
+black
+pylint
+isort
+mypy
+pytest
+pytest-cov
+pre-commit
+```
+
+```txt Visualization (Optional)
+matplotlib
+altair
+shap
+eli5
+mlxtend
+```
+
+```txt Interactive (Optional)
+jupyterlab
+watermark
+```
+</CodeGroup>
+
+## Install Optional Dependencies
+
+Depending on your use case, you may want additional features:
+
+<Tabs>
+  <Tab title="Visualization">
+    For generating plots and interpreting model predictions:
+    
+    ```bash
+    pip install -e .[extra]
+    ```
+    
+    This includes: matplotlib, altair, shap, eli5, mlxtend, rfpimp
+  </Tab>
+  
+  <Tab title="Interactive Analysis">
+    For Jupyter notebook support:
+    
+    ```bash
+    pip install -e .[interactive]
+    ```
+    
+    This includes: jupyterlab, watermark
+  </Tab>
+  
+  <Tab title="All Features">
+    Install everything:
+    
+    ```bash
+    pip install -e .[dev,extra,interactive]
+    ```
+  </Tab>
+</Tabs>
+
+## Pre-computed Predictions
+
+Instead of running TRIFID from scratch, you can download pre-computed predictions for multiple genome assemblies. This is the **recommended approach** for most users.
+
+### Available Genomes
+
+<AccordionGroup>
+  <Accordion title="Human (Homo sapiens)" icon="user">
+    | Assembly | Database | Version | Release Date | Download |
+    |----------|----------|---------|--------------|----------|
+    | GRCh38 | GENCODE | v27 | Aug 2017 | [Link](https://drive.google.com/drive/folders/1RcUgw62gXE1U2iqUHPWppaQvofP4PYuk) |
+    | GRCh38 | GENCODE | v37 | Feb 2021 | [Link](https://drive.google.com/drive/folders/18206rNxVX_V8x9Gao1WpdZ-1neh4rQMV) |
+    | GRCh38 | GENCODE | v42 | Apr 2022 | [Link](https://drive.google.com/drive/folders/1l0gKtd_phJyvNuAEpuRqycOC_OMabtkv) |
+    | GRCh38 | RefSeq | 110 | Feb 2020 | [Link](https://drive.google.com/drive/folders/1LwNGWsB2dB6hXzF9nGZ1Wem4ECJV_313) |
+    | GRCh37 | GENCODE | v19 | Dec 2013 | [Link](https://drive.google.com/drive/folders/1qbzl4y4tGnuR8QD5DUb4psTNB5b6Fydu) |
+    | GRCh37 | RefSeq | 105 | Feb 2020 | [Link](https://drive.google.com/drive/folders/1axo4UniwdNBpThxFPBVPs3Y0wxylP-L6) |
+  </Accordion>
+
+  <Accordion title="Model Organisms" icon="flask">
+    | Species | Assembly | Database | Version | Download |
+    |---------|----------|----------|---------|----------|
+    | Mouse | GRCm39 | GENCODE | M31 | [Link](https://drive.google.com/drive/folders/1VCj2dI3ua2rznrM481uTnl2XKzLCiErd) |
+    | Mouse | GRCm38 | GENCODE | M25 | [Link](https://drive.google.com/drive/folders/1V3E9_Q0GmbozO5_D4BM0ZVUeXxzpu9ZN) |
+    | Rat | mRatBN7.2 | Ensembl | 105 | [Link](https://drive.google.com/drive/folders/1GdXK9BrmwfCpbgEoc9xUR79qryS0R7nw) |
+    | Zebrafish | GRCz11 | Ensembl | 104 | [Link](https://drive.google.com/drive/folders/1su-8I_VqHqYOdKX_WjDA8lMjFnMuFICz) |
+    | Fruitfly | BDGP6 | Ensembl | 107 | [Link](https://drive.google.com/drive/folders/1BQ2Yob9CPJG32ZjuD_ST1-MJpsrjCXuV) |
+    | Worm | WBcel235 | Ensembl | 108 | [Link](https://drive.google.com/drive/folders/1u2BkNF2ho70GloJu7pdvEffbfjaa_euq) |
+  </Accordion>
+
+  <Accordion title="Other Vertebrates" icon="paw">
+    | Species | Assembly | Database | Version | Download |
+    |---------|----------|----------|---------|----------|
+    | Chicken | GRCg7b | Ensembl | 108 | [Link](https://drive.google.com/drive/folders/1YCBAOebJTFnx65wWJcSaTwuCH5JYgRGF) |
+    | Chimpanzee | Pan_tro_3.0 | Ensembl | 104 | [Link](https://drive.google.com/drive/folders/1psXzm8FsjQI6ce2yVWpOFCW7ib4IHp4B) |
+    | Pig | Sscrofa11.1 | Ensembl | 108 | [Link](https://drive.google.com/drive/folders/19vhMdcS57dsuRWyBK-myC_iEJBXV4YEE) |
+    | Cow | ARS-UCD1.2 | Ensembl | 104 | [Link](https://drive.google.com/drive/folders/19ks-d7Feaja6igEv8zOujhRQ2xoNefGL) |
+    | Macaque | Mmul_10 | Ensembl | 105 | [Link](https://drive.google.com/drive/folders/1bjBappCZRMeAemx51sb1DLXlzG1fd3j0) |
+  </Accordion>
+</AccordionGroup>
+
+### Download and Extract
+
+Each prediction package contains:
+- `trifid_predictions.tsv.gz` - TRIFID scores for all isoforms
+- `trifid_db.tsv.gz` - Complete feature matrix
+- Feature description files
+
+```bash
+# Example: Download human GRCh38 GENCODE 27 predictions
+wget https://drive.google.com/... -O trifid_predictions.tsv.gz
+
+# Extract and view
+gunzip trifid_predictions.tsv.gz
+head trifid_predictions.tsv
+```
+
+<Warning>
+Prediction files can be large (>1GB compressed). Ensure you have sufficient disk space.
+</Warning>
+
+## Additional Resources
+
+For advanced usage and model training, you may need additional data files:
+
+<CardGroup cols={2}>
+  <Card title="Training Data" icon="database">
+    [TRIFID training set](https://drive.google.com/file/d/1E4OUEbfAGvCanhSlABiB8n-81p_Be8zi/view) (GENCODE 27)
+  </Card>
+  
+  <Card title="Pre-trained Model" icon="brain">
+    [TRIFID model v1.0.4](https://drive.google.com/file/d/1MNPMOqpPRA4mJZh25m3GbBfD9D7js7DM/view) (pickle format)
+  </Card>
+  
+  <Card title="Tutorial Notebook" icon="book">
+    [Complete tutorial](https://github.com/fpozoc/trifid/blob/master/notebooks/01.tutorial.ipynb) with examples
+  </Card>
+  
+  <Card title="Figures Notebook" icon="chart-line">
+    [Reproduce paper figures](https://github.com/fpozoc/trifid/blob/master/notebooks/02.figures.ipynb)
+  </Card>
+</CardGroup>
+
+## Need Help?
+
+If you encounter issues during installation:
+
+1. Check the [GitHub Issues](https://github.com/fpozoc/trifid/issues) for known problems
+2. Ensure all system requirements are met
+3. Try creating a fresh conda environment
+4. Open a new issue with your error log
+
+<Tip>
+For species or genome versions not listed, you can request custom predictions by [opening an issue](https://github.com/fpozoc/trifid/issues/new) on GitHub.
+</Tip>
+
+## Next Steps
+
+<Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+  Learn how to load predictions and analyze your first gene
+</Card>

@@ -1,0 +1,537 @@
+---
+title: "select"
+description: "Model selection, training, and evaluation utilities for TRIFID"
+---
+
+## Overview
+
+The `select` module provides classes for model selection, training, and evaluation. It includes nested cross-validation for hyperparameter tuning, multiple classifier support, and comprehensive evaluation metrics.
+
+## Classes
+
+### Splitter
+
+Base class providing train/test splitting functionality.
+
+#### Constructor
+
+```python
+from trifid.models.select import Splitter
+
+splitter = Splitter(
+    df=training_dataframe,
+    features_col=feature_columns,
+    target_col="label",
+    random_state=123,
+    test_size=0.25,
+    split_by_gene=False
+)
+```
+
+#### Parameters
+
+<ParamField path="df" type="pandas.DataFrame" required>
+  Training dataset as pandas DataFrame
+</ParamField>
+
+<ParamField path="features_col" type="list" required>
+  List of feature column names to use as independent variables
+</ParamField>
+
+<ParamField path="target_col" type="string" required>
+  Name of target column to use as dependent variable
+</ParamField>
+
+<ParamField path="random_state" type="integer" required>
+  Random seed for reproducibility
+</ParamField>
+
+<ParamField path="test_size" type="float" default="0.25">
+  Proportion of dataset to use for testing (0.0 to 1.0)
+</ParamField>
+
+<ParamField path="split_by_gene" type="boolean" default="False">
+  If True, ensures transcripts from the same gene are in the same split
+</ParamField>
+
+#### Attributes
+
+<ResponseField name="train_features" type="pandas.DataFrame">
+  Training feature matrix
+</ResponseField>
+
+<ResponseField name="test_features" type="pandas.DataFrame">
+  Test feature matrix
+</ResponseField>
+
+<ResponseField name="train_target" type="pandas.Series">
+  Training target values
+</ResponseField>
+
+<ResponseField name="test_target" type="pandas.Series">
+  Test target values
+</ResponseField>
+
+<ResponseField name="training_set" type="pandas.DataFrame">
+  Complete training set with all columns
+</ResponseField>
+
+<ResponseField name="test_set" type="pandas.DataFrame">
+  Complete test set with all columns
+</ResponseField>
+
+### Classifier
+
+Model training and evaluation wrapper that extends Splitter.
+
+#### Constructor
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from trifid.models.select import Classifier
+
+model = RandomForestClassifier(
+    n_estimators=400,
+    max_features=7,
+    min_samples_leaf=7,
+    random_state=123
+)
+
+classifier = Classifier(
+    model=model,
+    df=training_dataframe,
+    features_col=feature_columns,
+    target_col="label",
+    random_state=123,
+    test_size=0.25,
+    preprocessing=None
+)
+```
+
+#### Parameters
+
+<ParamField path="model" type="object" required>
+  Scikit-learn model instance (e.g., RandomForestClassifier, GradientBoostingClassifier)
+</ParamField>
+
+<ParamField path="df" type="pandas.DataFrame" required>
+  Training dataset as pandas DataFrame
+</ParamField>
+
+<ParamField path="features_col" type="list" required>
+  List of feature column names to use as independent variables
+</ParamField>
+
+<ParamField path="target_col" type="string" required>
+  Name of target column to use as dependent variable
+</ParamField>
+
+<ParamField path="random_state" type="integer" default="123">
+  Random seed for reproducibility
+</ParamField>
+
+<ParamField path="test_size" type="float" default="0.25">
+  Proportion of dataset to use for testing (0.0 to 1.0)
+</ParamField>
+
+<ParamField path="preprocessing" type="object" default="None">
+  Optional preprocessing step (e.g., StandardScaler) to add to pipeline
+</ParamField>
+
+#### Properties
+
+##### evaluate
+
+Returns comprehensive evaluation metrics on test set.
+
+```python
+scores = classifier.evaluate
+print(scores)
+```
+
+**Returns**: DataFrame with metrics:
+- Accuracy
+- AUC (Area Under ROC Curve)
+- Average Precision Score
+- Balanced Accuracy
+- F1 Score
+- Log Loss (negated)
+- MCC (Matthews Correlation Coefficient)
+- Precision
+- Recall
+
+##### classification_report
+
+Returns scikit-learn classification report.
+
+```python
+report = classifier.classification_report
+print(report)
+```
+
+##### confusion_matrix
+
+Returns confusion matrix as DataFrame.
+
+```python
+cm = classifier.confusion_matrix
+print(cm)
+```
+
+**Returns**: DataFrame with columns: TN, FP, FN, TP
+
+##### cross_validate
+
+Performs stratified k-fold cross-validation.
+
+```python
+cv_results = classifier.cross_validate(n_splits=5)
+print(cv_results)
+```
+
+**Returns**: DataFrame with mean and standard deviation for each metric
+
+#### Methods
+
+##### make_prediction()
+
+Generate predictions for new samples.
+
+```python
+# Class predictions
+predictions = classifier.make_prediction(
+    samples=new_features,
+    probability=False
+)
+
+# Probability predictions
+probs = classifier.make_prediction(
+    samples=new_features,
+    probability=True
+)
+```
+
+<ParamField path="samples" type="pandas.DataFrame or numpy.ndarray" required>
+  Feature matrix for new samples
+</ParamField>
+
+<ParamField path="probability" type="boolean" default="False">
+  If True, returns probabilities; if False, returns class labels
+</ParamField>
+
+##### save_model()
+
+Save the trained model to disk.
+
+```python
+classifier.save_model(
+    outdir="models",
+    name="custom_model.pkl"
+)
+```
+
+<ParamField path="outdir" type="string" required>
+  Directory path to save model
+</ParamField>
+
+<ParamField path="name" type="string" default="custom_model.pkl">
+  Filename for saved model
+</ParamField>
+
+### ModelSelection
+
+Nested cross-validation for automated hyperparameter tuning and model selection.
+
+#### Constructor
+
+```python
+from trifid.models.select import ModelSelection
+
+model_selection = ModelSelection(
+    df=training_dataframe,
+    features_col=feature_columns,
+    target_col="label",
+    random_state=123,
+    n_outer_splits=5,
+    n_inner_splits=10,
+    n_jobs=20,
+    save=False,
+    filepath=None
+)
+```
+
+#### Parameters
+
+<ParamField path="df" type="pandas.DataFrame" required>
+  Training dataset as pandas DataFrame
+</ParamField>
+
+<ParamField path="features_col" type="list" required>
+  List of feature column names to use as independent variables
+</ParamField>
+
+<ParamField path="target_col" type="string" required>
+  Name of target column to use as dependent variable
+</ParamField>
+
+<ParamField path="random_state" type="integer" default="123">
+  Random seed for reproducibility
+</ParamField>
+
+<ParamField path="n_outer_splits" type="integer" default="5">
+  Number of folds in outer cross-validation loop
+</ParamField>
+
+<ParamField path="n_inner_splits" type="integer" default="10">
+  Number of folds in inner cross-validation loop (for GridSearchCV)
+</ParamField>
+
+<ParamField path="n_jobs" type="integer" default="20">
+  Number of parallel jobs for GridSearchCV
+</ParamField>
+
+<ParamField path="save" type="boolean" default="False">
+  Whether to save model selection results
+</ParamField>
+
+<ParamField path="filepath" type="string" default="None">
+  Path to save results (if save=True)
+</ParamField>
+
+#### Methods
+
+##### get_best_model()
+
+Performs nested CV and returns the best model.
+
+```python
+best_model = model_selection.get_best_model(
+    outdir="models",
+    selection_metric="MCC"
+)
+```
+
+<ParamField path="outdir" type="string" default="None">
+  Directory to save model and results. If None, doesn't save.
+</ParamField>
+
+<ParamField path="selection_metric" type="string" default="MCC">
+  Metric to optimize during model selection. Options:
+  - "MCC" (Matthews Correlation Coefficient)
+  - "AUC"
+  - "F1 Score"
+  - "Balanced Accuracy"
+  - "Accuracy"
+  - "Precision"
+  - "Recall"
+</ParamField>
+
+**Returns**: Trained scikit-learn model object
+
+**Process**:
+1. For each model configuration (Random Forest, Decision Tree, etc.)
+2. Outer loop: Split data into train/validation
+3. Inner loop: GridSearchCV for hyperparameter tuning
+4. Evaluate best hyperparameters on validation set
+5. Select model with best average validation performance
+6. Retrain on full training set
+
+##### save_model()
+
+Save the selected model.
+
+```python
+model_selection.save_model(outdir="models")
+```
+
+##### save_results()
+
+Save model selection results to compressed TSV.
+
+```python
+model_selection.save_results(outdir="models")
+```
+
+## Supported Models
+
+The `ModelSelection` class includes hyperparameter grids for:
+
+### Random Forest (Default)
+
+```python
+RandomForestClassifier(
+    n_estimators=400,
+    random_state=123,
+    n_jobs=-1
+)
+```
+
+**Tuned hyperparameters**:
+- `min_samples_leaf`: [5, 6, 7, ..., 14]
+
+### Decision Tree
+
+```python
+DecisionTreeClassifier(random_state=123)
+```
+
+**Tuned hyperparameters**:
+- `max_depth`: [1, 2, 3, ..., 9, None]
+- `criterion`: ["gini", "entropy"]
+
+### Additional Models (Commented)
+
+The module includes commented configurations for:
+- AdaBoost
+- Extremely Randomized Trees
+- Gradient Boosting Machine
+- K-Nearest Neighbors
+- Logistic Regression
+- Support Vector Machine
+- XGBoost
+
+Uncomment and configure as needed.
+
+## Evaluation Metrics
+
+All metrics are computed on the test/validation set:
+
+<ResponseField name="Accuracy" type="float">
+  (TP + TN) / (TP + TN + FP + FN)
+</ResponseField>
+
+<ResponseField name="AUC" type="float">
+  Area under the ROC curve
+</ResponseField>
+
+<ResponseField name="Average Precision Score" type="float">
+  Area under the precision-recall curve
+</ResponseField>
+
+<ResponseField name="Balanced Accuracy" type="float">
+  Average of recall for each class
+</ResponseField>
+
+<ResponseField name="F1 Score" type="float">
+  Harmonic mean of precision and recall
+</ResponseField>
+
+<ResponseField name="Log Loss" type="float">
+  Negative log-likelihood (negated for consistency)
+</ResponseField>
+
+<ResponseField name="MCC" type="float">
+  Matthews Correlation Coefficient (-1 to 1)
+</ResponseField>
+
+<ResponseField name="Precision" type="float">
+  TP / (TP + FP)
+</ResponseField>
+
+<ResponseField name="Recall" type="float">
+  TP / (TP + FN), also called Sensitivity
+</ResponseField>
+
+## Complete Example
+
+```python
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from trifid.models.select import Classifier, ModelSelection
+
+# Load training data
+df_training = pd.read_csv("data/training_set.tsv", sep="\t")
+feature_cols = [col for col in df_training.columns 
+                if col not in ["label", "gene_id", "transcript_id"]]
+
+# Option 1: Train a custom model
+model = RandomForestClassifier(
+    n_estimators=400,
+    max_features=7,
+    min_samples_leaf=7,
+    random_state=123
+)
+
+classifier = Classifier(
+    model=model,
+    df=df_training,
+    features_col=feature_cols,
+    target_col="label",
+    random_state=123,
+    test_size=0.25
+)
+
+# Evaluate
+print("Test Set Evaluation:")
+print(classifier.evaluate)
+
+print("\nCross-Validation:")
+print(classifier.cross_validate(n_splits=5))
+
+print("\nConfusion Matrix:")
+print(classifier.confusion_matrix)
+
+# Save model
+classifier.save_model(outdir="models", name="custom_rf.pkl")
+
+# Option 2: Automated model selection
+model_selection = ModelSelection(
+    df=df_training,
+    features_col=feature_cols,
+    target_col="label",
+    random_state=123,
+    n_outer_splits=5,
+    n_inner_splits=10,
+    n_jobs=20
+)
+
+best_model = model_selection.get_best_model(
+    outdir="models",
+    selection_metric="MCC"
+)
+
+print("\nBest Model Selected:")
+print(best_model)
+```
+
+## Gene-Based Splitting
+
+For preventing data leakage when transcripts from the same gene are correlated:
+
+```python
+splitter = Splitter(
+    df=df_training,
+    features_col=feature_cols,
+    target_col="label",
+    random_state=123,
+    test_size=0.25,
+    split_by_gene=True  # Ensures no gene appears in both train and test
+)
+```
+
+This ensures that:
+- All transcripts from a gene are in either training or test set
+- No gene leakage between splits
+- More realistic evaluation of generalization
+
+## Best Practices
+
+1. **Use MCC for imbalanced datasets**: More robust than accuracy
+2. **Nested CV for small datasets**: Provides unbiased performance estimates
+3. **Gene-based splitting**: When transcripts are correlated within genes
+4. **Save models and results**: For reproducibility and future use
+5. **Multiple metrics**: Don't rely on a single metric
+
+## Output Files
+
+When using `ModelSelection.get_best_model(outdir="models")`:
+
+- **selected_model.pkl**: Serialized best model
+- **model_selection_TIMESTAMP.tsv.gz**: Detailed results for all models and folds
+- **model_selection_TIMESTAMP.log**: Training log with nested CV progress
+
+## Related Modules
+
+- [train](/api/models/train): Model training workflows
+- [predict](/api/models/predict): Generate predictions
+- [interpret](/api/models/interpret): Model interpretation and feature importance

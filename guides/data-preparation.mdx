@@ -1,0 +1,337 @@
+---
+title: 'Data Preparation'
+description: 'Learn how to prepare genome annotations and data sources for TRIFID'
+icon: 'database'
+---
+
+TRIFID requires properly formatted genomic data and feature annotations before training or making predictions. This guide walks you through the complete data preparation workflow.
+
+## Overview
+
+The data preparation pipeline involves:
+
+1. Setting up configuration files
+2. Downloading and organizing genome annotations
+3. Running preprocessing modules (QSplice, Pfam effects)
+4. Building the feature database
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+- GENCODE or Ensembl genome annotations (GTF/GFF3 format)
+- APPRIS data files for your genome assembly
+- Protein sequences in FASTA format
+- RNA-seq data for splice junction quantification (optional)
+- Pfam domain annotations (optional)
+
+## Configuration Files
+
+TRIFID uses YAML configuration files to specify data sources and features.
+
+### Creating config.yaml
+
+The main configuration file defines paths to all data sources:
+
+```yaml config/config.yaml
+genomes:
+  GRCh38:
+    g27:
+      annotation: "data/genomes/GRCh38/g27/gencode.v27.annotation.gtf.gz"
+      appris_data: "data/external/appris/GRCh38/g27/appris_data.appris.txt"
+      corsair_alt: "data/external/corsair_alt/GRCh38/g27/corsair_alt.tsv.gz"
+      qpfam: "data/external/pfam_effects/GRCh38/g27/qpfam.tsv.gz"
+      qsplice: "data/external/qsplice/GRCh38/g27/qsplice.emtab2836.tsv.gz"
+      phylocsf: "data/external/phylocsf/GRCh38/g27/phylocsf.tsv.gz"
+      reference: "data/external/qduplications/GRCh38/g27/qduplications.tsv.gz"
+      sequences: "data/external/appris/GRCh38/g27/appris_data.transl.fa.gz"
+```
+
+### Creating features.yaml
+
+Define which features to include in the final dataset:
+
+```yaml config/features.yaml
+- category: "Identifier"
+  feature: "gene_id"
+  description: "Gene identifier"
+
+- category: "Identifier"
+  feature: "transcript_id"
+  description: "Transcript identifier"
+
+- category: "Structural"
+  feature: "length"
+  description: "Protein sequence length"
+
+- category: "APPRIS"
+  feature: "norm_spade"
+  description: "Normalized SPADE score (domain integrity)"
+
+- category: "Splicing"
+  feature: "norm_RNA2sj_cds"
+  description: "Normalized RNA-seq splice junction support"
+
+- category: "Domains"
+  feature: "pfam_score"
+  description: "Pfam domain impact score"
+```
+
+<Tip>
+Start with the essential features (identifiers, length, APPRIS scores) and add optional features as your data sources become available.
+</Tip>
+
+## Running QSplice: Splice Junction Quantification
+
+QSplice quantifies splice junction support from RNA-seq data, providing evidence for transcript usage.
+
+### Step 1: Prepare RNA-seq Data
+
+If you have STAR alignment output:
+
+```bash
+# Collect SJ.out.tab files from STAR alignments
+cat path/to/STAR/*/SJ.out.tab > SJ.out.tab.concat
+gzip SJ.out.tab.concat
+```
+
+### Step 2: Run QSplice
+
+<Steps>
+  <Step title="Generate introns annotation">
+    QSplice first generates intron positions from your genome annotation:
+
+    ```bash
+    python -m trifid.preprocessing.qsplice \
+      --gff data/genomes/GRCh38/g27/gencode.v27.annotation.gff3.gz \
+      --outdir data/external/qsplice/GRCh38/g27 \
+      --samples path/to/STAR/output \
+      --version g
+    ```
+  </Step>
+
+  <Step title="Map splice junctions">
+    The module maps RNA-seq splice junctions to annotated introns and calculates coverage scores.
+  </Step>
+
+  <Step title="Generate transcript scores">
+    For each transcript, QSplice calculates:
+    - `RNA2sj`: Minimum junction coverage normalized by gene average
+    - `RNA2sj_cds`: Same metric restricted to coding sequence introns
+  </Step>
+</Steps>
+
+### Output Files
+
+QSplice generates:
+
+- `qsplice.emtab2836.tsv.gz`: Final scores per transcript
+- `sj_maxp.emtab2836.mapped.tsv.gz`: Junction-level scores
+- Intermediate intron annotations
+
+**Example output:**
+
+```
+gene_id          transcript_id    RNA2sj    RNA2sj_cds
+ENSG00000139618  ENST00000380152  1.2453    1.3421
+ENSG00000139618  ENST00000544455  0.0234    0.0156
+```
+
+<Warning>
+QSplice requires significant memory for large genomes. Allocate at least 16GB RAM for human genome analysis.
+</Warning>
+
+## Running Pfam Effects: Domain Integrity Analysis
+
+The Pfam effects module quantifies how alternative splicing impacts protein domain structure.
+
+### Step 1: Prepare Input Files
+
+You need:
+
+- APPRIS data file (`appris_data.appris.txt`)
+- Protein sequences (`appris_data.transl.fa.gz`)
+- SPADE domain annotations (`appris_method.spade.gtf.gz`)
+
+### Step 2: Run Pfam Effects
+
+```bash
+python -m trifid.preprocessing.pfam_effects \
+  --appris data/external/appris/GRCh38/g27/appris_data.appris.txt \
+  --seqs data/external/appris/GRCh38/g27/appris_data.transl.fa.gz \
+  --spade data/external/appris/GRCh38/g27/appris_method.spade.gtf.gz \
+  --outdir data/external/pfam_effects/GRCh38/g27 \
+  --jobs 10 \
+  --rm
+```
+
+<Info>
+The `--jobs` parameter controls parallel processing. Set it based on available CPU cores.
+</Info>
+
+### How It Works
+
+<Steps>
+  <Step title="Select reference transcripts">
+    For each gene, selects the principal isoform as reference based on:
+    - APPRIS PRINCIPAL annotation
+    - CCDS status
+    - Transcript support level (TSL)
+    - Sequence length
+  </Step>
+
+  <Step title="Perform multiple sequence alignment">
+    Aligns alternative isoforms to the reference using MUSCLE:
+
+    ```
+    >ENST00000380152  ENSG00000139618  # Reference
+    MTEYKLVVVGAGGVGKSALTIQLIQNHFVDEYDPTIEDSYRKQVVIDGET
+    >ENST00000544455  ENSG00000139618  # Alternative
+    MTEYKLVVVG----VGKSALTIQLIQNHFVDEYDPTIEDSYRKQVVIDGET
+    ```
+  </Step>
+
+  <Step title="Analyze Pfam domain effects">
+    Calculates the impact of sequence differences on Pfam domains:
+    - Lost residues in domains
+    - Damaged domain integrity
+    - Domain loss/gain events
+  </Step>
+</Steps>
+
+### Output Metrics
+
+The module generates several scores in `qpfam.tsv.gz`:
+
+- `pfam_score`: Overall domain integrity (0-1, higher = more intact)
+- `pfam_domains_impact_score`: Proportion of domains affected
+- `perc_Damaged_State`: Percentage of partially damaged domains
+- `perc_Lost_State`: Percentage of completely lost domains
+- `Lost_residues_pfam`: Number of residues lost in domains
+
+## Building the Complete Dataset
+
+Once preprocessing is complete, generate the final TRIFID database:
+
+### Running make_dataset
+
+```bash
+python -m trifid.data.make_dataset \
+  --config config/config.yaml \
+  --features config/features.yaml \
+  --assembly GRCh38 \
+  --release g27
+```
+
+### What Happens
+
+<Steps>
+  <Step title="Load all data sources">
+    The script loads:
+    - Genome annotation (trifid/data/loaders.py:210)
+    - APPRIS scores
+    - QSplice results
+    - Pfam effects
+    - PhyloCSF conservation scores
+    - Other optional features
+  </Step>
+
+  <Step title="Feature engineering">
+    Applies transformations (trifid/data/feature_engineering.py:158):
+    - Group normalization per gene
+    - Delta scores (difference from reference isoform)
+    - Fragment correction
+    - One-hot encoding of categorical features
+  </Step>
+
+  <Step title="Save final database">
+    Outputs `trifid_db.tsv.gz` containing all features for all transcripts.
+  </Step>
+</Steps>
+
+### Output Format
+
+The final database looks like:
+
+```
+gene_id          transcript_id    length  norm_spade  norm_RNA2sj_cds  pfam_score  ...
+ENSG00000139618  ENST00000380152  189     1.0000      0.9845           1.0000
+ENSG00000139618  ENST00000544455  143     0.8234      0.0234           0.6521
+```
+
+<Check>
+Verify your database has:
+- All expected transcripts from your annotation
+- No missing values in required features
+- Normalized scores between 0 and 1
+</Check>
+
+## Data Directory Structure
+
+Organize your data following this structure:
+
+```
+data/
+├── genomes/
+│   └── GRCh38/
+│       └── g27/
+│           ├── gencode.v27.annotation.gtf.gz
+│           └── trifid_db.tsv.gz          # Final output
+├── external/
+│   ├── appris/
+│   │   └── GRCh38/g27/
+│   │       ├── appris_data.appris.txt
+│   │       ├── appris_data.transl.fa.gz
+│   │       └── appris_method.spade.gtf.gz
+│   ├── qsplice/
+│   │   └── GRCh38/g27/
+│   │       └── qsplice.emtab2836.tsv.gz
+│   └── pfam_effects/
+│       └── GRCh38/g27/
+│           └── qpfam.tsv.gz
+└── model/
+    └── training_set_initial.g27.tsv.gz   # For training
+```
+
+## Troubleshooting
+
+### Missing Features
+
+**Problem**: Some features are all NaN in the final database.
+
+**Solution**: Check that:
+1. The data source file exists and is properly formatted
+2. Transcript IDs match between files (with/without version numbers)
+3. The config.yaml path is correct
+
+### Memory Errors
+
+**Problem**: QSplice or Pfam effects runs out of memory.
+
+**Solution**:
+- Increase available RAM
+- Process chromosomes separately
+- Reduce the number of RNA-seq samples
+
+### Transcript ID Mismatches
+
+**Problem**: Merge operations fail due to ID format differences.
+
+**Solution**: TRIFID handles both formats:
+- With version: `ENST00000380152.7`
+- Without version: `ENST00000380152`
+
+Ensure consistency across all input files.
+
+## Next Steps
+
+With your data prepared:
+
+<CardGroup cols={2}>
+  <Card title="Train Models" icon="brain" href="/guides/training-models">
+    Learn how to train custom TRIFID models
+  </Card>
+  <Card title="Make Predictions" icon="crystal-ball" href="/guides/making-predictions">
+    Apply trained models to score isoforms
+  </Card>
+</CardGroup>

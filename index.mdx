@@ -1,97 +1,345 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "TRIFID Documentation"
+mode: "custom"
 ---
 
-## Setting up
+<div className="relative bg-gradient-to-br from-[#051d44] via-[#0a2a5c] to-[#051d44] dark:bg-gradient-to-br dark:from-[#0f1117] dark:via-[#051d44] dark:to-[#0f1117] overflow-hidden">
+  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS1vcGFjaXR5PSIwLjA1IiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-40"></div>
+  
+  <div className="relative max-w-7xl mx-auto px-6 py-20 lg:py-28">
+    <div className="grid lg:grid-cols-12 gap-12 items-center">
+      <div className="lg:col-span-7">
+        <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight">
+          Assess Splice Isoform Functionality
+        </h1>
+        <p className="text-xl sm:text-2xl text-gray-300 dark:text-gray-300 mb-8 max-w-2xl leading-relaxed">
+          TRIFID is a machine learning-based tool that predicts the functional relevance of splice isoforms using Random Forest models and SHAP interpretability.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <a 
+            href="/quickstart" 
+            className="inline-flex items-center px-8 py-4 rounded-lg bg-white text-[#051d44] font-semibold hover:bg-gray-100 transition-colors shadow-lg text-lg"
+          >
+            Get Started
+            <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </a>
+          <a 
+            href="/api/models/predict" 
+            className="inline-flex items-center px-8 py-4 rounded-lg border-2 border-white/40 bg-white/10 backdrop-blur-sm text-white font-semibold hover:bg-white/20 transition-colors text-lg"
+          >
+            API Reference
+          </a>
+        </div>
+      </div>
+      
+      <div className="lg:col-span-5">
+        <div className="bg-white/10 dark:bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 dark:border-white/20 p-8 shadow-2xl">
+          <div className="text-sm font-mono text-gray-300 dark:text-gray-300 space-y-2">
+            <div className="text-gray-400 dark:text-gray-400"># Install TRIFID</div>
+            <div className="text-white">pip install git+https://github.com/fpozoc/trifid.git</div>
+            <div className="mt-6 text-gray-400 dark:text-gray-400"># Make predictions</div>
+            <div className="text-white">python -m trifid.models.predict</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      Quick Start
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Get up and running with TRIFID in minutes
+    </p>
+  </div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+  <Steps>
+    <Step title="Install TRIFID">
+      Install TRIFID directly from GitHub using pip:
+      
+      ```bash
+      pip install git+https://github.com/fpozoc/trifid.git
+      ```
+      
+      For development, clone the repository and install with conda/mamba:
+      
+      ```bash
+      git clone https://github.com/fpozoc/trifid.git
+      cd trifid
+      mamba env create -f environment.yml
+      conda activate trifid
+      ```
+    </Step>
 
-## Make it yours
+    <Step title="Load Pre-computed Predictions">
+      Access predictions for human and other species from available datasets:
+      
+      ```python
+      import pandas as pd
+      
+      # Load TRIFID predictions for GENCODE 27
+      predictions = pd.read_csv(
+          'data/genomes/GRCh38/g27/trifid_predictions.tsv.gz',
+          compression='gzip',
+          sep='\t'
+      )
+      
+      # Filter by gene name
+      gene_predictions = predictions[predictions['gene_name'] == 'FGFR1']
+      print(gene_predictions[['transcript_id', 'trifid_score', 'appris']])
+      ```
+      
+      <Note>
+        Pre-computed predictions are available for GENCODE, RefSeq, and Ensembl annotations across multiple species including human, mouse, rat, and more.
+      </Note>
+    </Step>
 
-Design a docs site that looks great and empowers your users.
+    <Step title="Train a Custom Model">
+      Train your own TRIFID model on custom genome annotations:
+      
+      ```bash
+      # Prepare your dataset
+      python -m trifid.data.make_dataset
+      
+      # Train the model
+      python -m trifid.models.train
+      
+      # Generate predictions
+      python -m trifid.models.predict
+      ```
+    </Step>
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
+    <Step title="Interpret Results with SHAP">
+      Use SHAP values to understand which features drive predictions:
+      
+      ```python
+      from trifid.models.interpret import explain_prediction
+      
+      # Load SHAP explanations for a specific isoform
+      explain_prediction(df_shap, model, features, 'ENST00000356207')
+      ```
+      
+      <Tip>
+        TRIFID's interpretability features help identify which predictive features (splice junction coverage, domain conservation, etc.) contribute most to each isoform's functional score.
+      </Tip>
+    </Step>
+  </Steps>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      Key Features
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Powerful capabilities for splice isoform functional assessment
+    </p>
+  </div>
+
+  <CardGroup cols={2}>
     <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+      title="Random Forest Classifier"
+      icon="brain"
+      href="/concepts/model-architecture"
+    >
+      Accurate predictions using ensemble machine learning trained on large-scale proteomics data
+    </Card>
+    <Card
+      title="SHAP Interpretability"
+      icon="chart-line"
+      href="/concepts/interpretability"
+    >
+      Understand feature importance and model decisions with SHAP-based explanations
+    </Card>
+    <Card
+      title="QSplice Module"
+      icon="dna"
+      href="/modules/qsplice"
+    >
+      Quantify splice junction coverage from RNA-seq data to assess isoform expression
+    </Card>
+    <Card
+      title="Pfam Effects Analysis"
+      icon="shield"
+      href="/modules/pfam-effects"
+    >
+      Evaluate the impact of alternative splicing on protein domain integrity
+    </Card>
+    <Card
+      title="Multi-Species Support"
+      icon="globe"
+      href="/data/available-predictions"
+    >
+      Pre-computed predictions for human, mouse, rat, and other vertebrate and invertebrate species
+    </Card>
+    <Card
+      title="Multiple Genome Builds"
+      icon="database"
+      href="/data/data-sources"
+    >
+      Support for GENCODE, RefSeq, and Ensembl annotations across different genome assemblies
+    </Card>
+  </CardGroup>
+</div>
 
-## Create beautiful pages
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      Explore by Use Case
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Find the documentation you need for your workflow
+    </p>
+  </div>
 
-Everything you need to create world-class documentation.
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <a
+      href="/guides/data-preparation"
+      className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#051d44] dark:hover:border-[#051d44] transition-all overflow-hidden no-underline shadow-sm hover:shadow-md"
+    >
+      <div className="h-48 bg-gradient-to-br from-[#051d44] to-[#7c97aa] flex items-center justify-center overflow-hidden">
+        <svg className="w-20 h-20 text-white opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
+      </div>
+      <div className="p-6">
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Data Preparation</h3>
+        <p className="text-gray-600 dark:text-gray-400 text-base mb-4">Learn how to prepare genome annotations, RNA-seq data, and feature datasets for TRIFID</p>
+        <span className="text-[#051d44] dark:text-[#7c97aa] font-medium group-hover:text-[#051d44] dark:group-hover:text-[#dee5e8] inline-flex items-center">
+          Read guide
+          <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </span>
+      </div>
+    </a>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+    <a
+      href="/guides/training-models"
+      className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#051d44] dark:hover:border-[#051d44] transition-all overflow-hidden no-underline shadow-sm hover:shadow-md"
+    >
+      <div className="h-48 bg-gradient-to-br from-[#1E4E8C] to-[#051d44] flex items-center justify-center overflow-hidden">
+        <svg className="w-20 h-20 text-white opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        </svg>
+      </div>
+      <div className="p-6">
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Training Models</h3>
+        <p className="text-gray-600 dark:text-gray-400 text-base mb-4">Train custom Random Forest models on your own datasets with hyperparameter optimization</p>
+        <span className="text-[#051d44] dark:text-[#7c97aa] font-medium group-hover:text-[#051d44] dark:group-hover:text-[#dee5e8] inline-flex items-center">
+          Read guide
+          <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </span>
+      </div>
+    </a>
 
-## Need inspiration?
+    <a
+      href="/guides/making-predictions"
+      className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#051d44] dark:hover:border-[#051d44] transition-all overflow-hidden no-underline shadow-sm hover:shadow-md"
+    >
+      <div className="h-48 bg-gradient-to-br from-[#7c97aa] to-[#051d44] flex items-center justify-center overflow-hidden">
+        <svg className="w-20 h-20 text-white opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <div className="p-6">
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Making Predictions</h3>
+        <p className="text-gray-600 dark:text-gray-400 text-base mb-4">Apply trained models to predict functional relevance scores for any set of isoforms</p>
+        <span className="text-[#051d44] dark:text-[#7c97aa] font-medium group-hover:text-[#051d44] dark:group-hover:text-[#dee5e8] inline-flex items-center">
+          Read guide
+          <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </span>
+      </div>
+    </a>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+    <a
+      href="/guides/interpreting-results"
+      className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:border-[#051d44] dark:hover:border-[#051d44] transition-all overflow-hidden no-underline shadow-sm hover:shadow-md"
+    >
+      <div className="h-48 bg-gradient-to-br from-[#dee5e8] to-[#7c97aa] flex items-center justify-center overflow-hidden">
+        <svg className="w-20 h-20 text-[#051d44] opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      </div>
+      <div className="p-6">
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Interpreting Results</h3>
+        <p className="text-gray-600 dark:text-gray-400 text-base mb-4">Use SHAP values and visualization tools to understand what drives each prediction</p>
+        <span className="text-[#051d44] dark:text-[#7c97aa] font-medium group-hover:text-[#051d44] dark:group-hover:text-[#dee5e8] inline-flex items-center">
+          Read guide
+          <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </span>
+      </div>
+    </a>
+  </div>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      Resources
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Additional resources to help you succeed with TRIFID
+    </p>
+  </div>
+
+  <CardGroup cols={3}>
+    <Card
+      title="Case Studies"
+      icon="flask"
+      href="/examples/fgfr1"
+    >
+      Explore real-world examples like FGFR1, C1orf112, and NIPAL3
+    </Card>
+    <Card
+      title="Research Paper"
+      icon="book-open"
+      href="https://academic.oup.com/nargab/article/3/2/lqab044/6281449"
+    >
+      Read the published manuscript in NAR Genomics and Bioinformatics
+    </Card>
+    <Card
+      title="GitHub Repository"
+      icon="github"
+      href="https://github.com/fpozoc/trifid"
+    >
+      Access the source code, notebooks, and contribute to the project
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="bg-gradient-to-br from-[#051d44] to-[#0a2a5c] dark:bg-gradient-to-br dark:from-[#051d44] dark:to-[#1a1d27] rounded-2xl p-8 md:p-12 text-center shadow-xl border border-[#7c97aa]/20">
+    <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+      Ready to Get Started?
+    </h2>
+    <p className="text-xl text-gray-300 dark:text-gray-300 mb-8 max-w-2xl mx-auto">
+      Install TRIFID and start predicting functional relevance of splice isoforms in your research
+    </p>
+    <div className="flex flex-col sm:flex-row gap-4 justify-center">
+      <a 
+        href="/installation" 
+        className="inline-flex items-center justify-center px-8 py-4 rounded-lg bg-white text-[#051d44] font-semibold hover:bg-gray-100 transition-colors shadow-lg text-lg"
+      >
+        Installation Guide
+      </a>
+      <a 
+        href="/examples/end-to-end-tutorial" 
+        className="inline-flex items-center justify-center px-8 py-4 rounded-lg border-2 border-white/40 bg-white/10 backdrop-blur-sm text-white font-semibold hover:bg-white/20 transition-colors text-lg"
+      >
+        View Tutorial
+      </a>
+    </div>
+  </div>
+</div>

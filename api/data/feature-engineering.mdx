@@ -1,0 +1,356 @@
+---
+title: 'Feature Engineering'
+description: 'Transform and normalize genomic features for machine learning'
+icon: 'wand-magic-sparkles'
+---
+
+## Overview
+
+The `feature_engineering` module provides functions to transform raw genomic data into normalized, machine learning-ready features. It handles normalization, imputation, categorical encoding, and dataset merging.
+
+## Core Functions
+
+### build_features
+
+Orchestrate the complete feature engineering pipeline.
+
+```python
+from trifid.data.feature_engineering import build_features
+
+df_processed = build_features(df_raw)
+```
+
+<ParamField path="df" type="pd.DataFrame" required>
+  Initial DataFrame with raw genomic features from multiple data sources
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+Processed DataFrame with normalized features ready for modeling.
+
+**Pipeline Steps:**
+1. Calculate delta scores for length features
+2. Build categorical features (one-hot encoding)
+3. Build APPRIS features (group normalization)
+4. Build ALT-Corsair features (normalized conservation)
+5. Build PhyloCSF features (evolutionary scores)
+6. Build QPfam features (domain impacts)
+7. Build QSplice features (splice junction support)
+8. Apply unity range normalization to all `norm_*` features
+9. Reorder columns for consistency
+
+**Example:**
+
+```python
+import pandas as pd
+from trifid.data.feature_engineering import load_data, build_features
+
+# Load raw data
+config = utils.parse_yaml("config/config.yaml")
+df_raw = load_data(config, assembly="GRCh38", release="g27")
+
+# Process features
+df_features = build_features(df_raw)
+
+# Result contains normalized features prefixed with 'norm_'
+print(df_features.filter(regex='^norm_').columns)
+# Output: ['norm_crash_p', 'norm_crash_m', 'norm_firestar', ...]
+```
+
+---
+
+### load_data
+
+Load and merge genomic data from multiple annotation sources.
+
+```python
+from trifid.data.feature_engineering import load_data
+import yaml
+
+with open("config/config.yaml") as f:
+    config = yaml.safe_load(f)
+
+df = load_data(
+    config=config,
+    assembly="GRCh38",
+    release="g27"
+)
+```
+
+<ParamField path="config" type="dict" required>
+  Configuration dictionary containing file paths for all data sources.
+  Structure:
+  ```python
+  {
+    "genomes": {
+      "GRCh38": {
+        "g27": {
+          "annotation": "path/to/annotation.gtf.gz",
+          "appris_data": "path/to/appris_data.txt",
+          "corsair_alt": "path/to/corsair_alt.tsv.gz",
+          "qpfam": "path/to/qpfam.tsv.gz",
+          "qsplice": "path/to/qsplice.tsv.gz",
+          "phylocsf": "path/to/phylocsf.tsv.gz",
+          "reference": "path/to/reference.tsv.gz",
+          "sequences": "path/to/sequences.fa.gz"
+        }
+      }
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="assembly" type="str" required>
+  Genome assembly version (e.g., `"GRCh38"`, `"GRCh37"`)
+</ParamField>
+
+<ParamField path="release" type="str" required>
+  Annotation release identifier (e.g., `"g27"` for GENCODE v27, `"e90"` for Ensembl 90)
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+Merged DataFrame containing all loaded data sources joined by `transcript_id`. PAR (Pseudoautosomal Region) transcripts are automatically removed.
+
+**Loaded Datasets:**
+- Genome annotations (GTF)
+- APPRIS functional scores
+- ALT-Corsair conservation scores
+- QPfam domain scores
+- QSplice junction coverage
+- PhyloCSF evolutionary scores
+- Reference transcript annotations
+- Protein sequences
+
+**Graceful Fallback:** If a data source path contains `"-"`, an empty DataFrame with expected columns is created.
+
+---
+
+## Feature Builder Functions
+
+### build_appris_features
+
+Normalize APPRIS functional module scores within gene groups.
+
+```python
+from trifid.data.feature_engineering import build_appris_features
+
+df = build_appris_features(df)
+```
+
+<ParamField path="df" type="pd.DataFrame" required>
+  DataFrame containing APPRIS features: `crash_p`, `crash_m`, `firestar`, `matador3d`, `spade`, `thump`, `corsair`
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with added normalized columns: `norm_crash_p`, `norm_crash_m`, `norm_firestar`, `norm_matador3d`, `norm_spade`, `norm_thump`, `norm_corsair`
+
+**Normalization:**
+- Standard features: Min-max normalization within each gene group
+- Corsair: Normalized with max cap at 4 (cross-species conservation)
+
+---
+
+### build_categorical_features
+
+One-hot encode categorical annotation features.
+
+```python
+from trifid.data.feature_engineering import build_categorical_features
+
+df = build_categorical_features(df)
+```
+
+<ParamField path="df" type="pd.DataFrame" required>
+  DataFrame containing categorical features: `tsl` (transcript support level), `level` (annotation confidence)
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with one-hot encoded columns:
+- `tsl_0` through `tsl_6`: Transcript support levels (1-5, plus 6 for NA)
+- `level_0` through `level_3`: GENCODE annotation confidence levels
+
+**Handling Missing Data:** If a categorical column is empty, NaN-filled columns are created for all categories.
+
+---
+
+### build_corsair_alt_features
+
+Normalize ALT-Corsair alternative isoform conservation scores.
+
+```python
+from trifid.data.feature_engineering import build_corsair_alt_features
+
+df = build_corsair_alt_features(df)
+```
+
+<ParamField path="df" type="pd.DataFrame" required>
+  DataFrame containing `corsair_alt` feature
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with added `norm_corsair_alt` column normalized within gene groups (max cap at 0.25).
+
+---
+
+### build_phylocsf_features
+
+Normalize and impute PhyloCSF evolutionary conservation scores.
+
+```python
+from trifid.data.feature_engineering import build_phylocsf_features
+
+df = build_phylocsf_features(df)
+```
+
+<ParamField path="df" type="pd.DataFrame" required>
+  DataFrame containing PhyloCSF features: `ScorePerCodon`, `RelBranchLength`, `PhyloCSF_Psi`
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with normalized columns: `norm_ScorePerCodon`, `norm_RelBranchLength`, `norm_PhyloCSF_Psi`
+
+**Processing:**
+1. Fill missing values with gene-level minimum
+2. Impute remaining NaNs at 3rd percentile
+3. Group-normalize within genes
+4. Apply fragment correction for partial transcripts
+
+---
+
+### build_qpfam_featues
+
+Normalize QPfam domain loss/gain scores and compute SPADE loss.
+
+```python
+from trifid.data.feature_engineering import build_qpfam_featues
+
+df = build_qpfam_featues(df)
+```
+
+<ParamField path="df" type="pd.DataFrame" required>
+  DataFrame containing QPfam features: `Lost_residues_pfam`, `Gain_residues_pfam`, `spade`, `gene_name`
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with normalized features:
+- `norm_Lost_residues_pfam`: Normalized lost residues (values below 10 set to 0)
+- `norm_Gain_residues_pfam`: Normalized gained residues
+- `norm_spade_loss`: Inverted SPADE loss (max - current, capped at 50)
+
+**Note:** Raw `Lost_residues_pfam` and `Gain_residues_pfam` columns are dropped, keeping only normalized values.
+
+---
+
+### build_qsplice_features
+
+Normalize QSplice junction support scores.
+
+```python
+from trifid.data.feature_engineering import build_qsplice_features
+
+df = build_qsplice_features(df)
+```
+
+<ParamField path="df" type="pd.DataFrame" required>
+  DataFrame containing QSplice features: `RNA2sj`, `RNA2sj_cds`
+</ParamField>
+
+**Returns:** `pd.DataFrame`
+
+DataFrame with normalized columns:
+- `norm_RNA2sj`: Normalized RNA-to-splice junction score
+- `norm_RNA2sj_cds`: Normalized CDS-specific junction score
+
+**Processing:**
+1. Fill NaN values with 0
+2. Group-normalize within genes
+3. Apply fragment correction
+
+---
+
+## Complete Pipeline Example
+
+```python
+import yaml
+from trifid.data.feature_engineering import load_data, build_features
+from trifid.utils import utils
+import pandas as pd
+
+# Load configuration
+config = utils.parse_yaml("config/config.yaml")
+
+# Load all data sources
+df_raw = load_data(
+    config=config,
+    assembly="GRCh38",
+    release="g27"
+)
+
+print(f"Loaded {len(df_raw)} transcripts")
+print(f"Raw columns: {df_raw.columns.tolist()}")
+
+# Apply feature engineering
+df_processed = build_features(df_raw)
+
+# Check normalized features
+norm_features = [col for col in df_processed.columns if col.startswith('norm_')]
+print(f"Generated {len(norm_features)} normalized features")
+
+# Select specific features for modeling
+feature_config = utils.parse_yaml("config/features.yaml")
+selected_features = feature_config['features']
+df_model = df_processed[selected_features]
+
+# Save processed dataset
+df_model.to_csv(
+    "data/trifid_processed.tsv.gz",
+    sep="\t",
+    compression="gzip",
+    index=False
+)
+```
+
+## Normalization Utilities
+
+The feature engineering functions rely on utility functions from `trifid.utils.utils`:
+
+- **`group_normalization`**: Min-max normalization within gene groups
+- **`one_hot_encoding`**: Convert categorical variables to binary columns
+- **`impute`**: Fill missing values using percentile or other strategies
+- **`fragments_correction`**: Adjust scores for partial transcripts
+- **`delta_score`**: Calculate difference from maximum within group
+- **`unity_ranger`**: Ensure all normalized features are in [0, 1] range
+- **`merge_dataframes`**: Left join multiple DataFrames on transcript_id
+
+## Feature Categories
+
+**Functional Annotations (APPRIS):**
+- `norm_firestar`: Functional residue annotations
+- `norm_matador3d`: 3D structure predictions
+- `norm_spade`: Domain predictions
+- `norm_thump`: Transmembrane predictions
+- `norm_crash_p`, `norm_crash_m`: Signal peptide scores
+
+**Conservation (Cross-species):**
+- `norm_corsair`: Cross-species alignment
+- `norm_corsair_alt`: Alternative isoform conservation
+- `norm_ScorePerCodon`, `norm_PhyloCSF_Psi`: Evolutionary scores
+
+**Experimental Support:**
+- `norm_RNA2sj`, `norm_RNA2sj_cds`: Splice junction coverage
+- `tsl_1` through `tsl_5`: Transcript support levels
+
+**Domain Structure:**
+- `norm_Lost_residues_pfam`, `norm_Gain_residues_pfam`: Pfam domain changes
+- `norm_spade_loss`: Domain prediction delta
+
+**Quality Flags:**
+- `CCDS`, `basic`, `StartEnd_NF`: Binary annotation flags
+- `nonsense_mediated_decay`: NMD prediction
+- `level_1` through `level_3`: Annotation confidence
