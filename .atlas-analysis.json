@@ -1,0 +1,133 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "TRIFID",
+  "projectDescription": "Machine Learning-based tool to assess the functional relevance of splice isoforms using Random Forest and SHAP interpretability.",
+  "theme": "aspen",
+  "primaryColor": "#051d44",
+  "lightColor": "#7c97aa",
+  "darkColor": "#dee5e8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/model-architecture",
+              "concepts/predictive-features",
+              "concepts/interpretability"
+            ]
+          },
+          {
+            "group": "User Guides",
+            "pages": [
+              "guides/data-preparation",
+              "guides/training-models",
+              "guides/making-predictions",
+              "guides/interpreting-results"
+            ]
+          },
+          {
+            "group": "TRIFID Modules",
+            "pages": [
+              "modules/qsplice",
+              "modules/pfam-effects",
+              "modules/fragment-labeling"
+            ]
+          },
+          {
+            "group": "Data & Models",
+            "pages": [
+              "data/available-predictions",
+              "data/data-sources",
+              "data/pretrained-models"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Preprocessing",
+            "pages": [
+              "api/preprocessing/qsplice",
+              "api/preprocessing/pfam-effects",
+              "api/preprocessing/label-fragments"
+            ]
+          },
+          {
+            "group": "Models",
+            "pages": [
+              "api/models/train",
+              "api/models/predict",
+              "api/models/interpret",
+              "api/models/select"
+            ]
+          },
+          {
+            "group": "Data",
+            "pages": [
+              "api/data/loaders",
+              "api/data/feature-engineering",
+              "api/data/make-dataset"
+            ]
+          },
+          {
+            "group": "Utils",
+            "pages": [
+              "api/utils/utils"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Case Studies",
+            "pages": [
+              "examples/fgfr1",
+              "examples/c1orf112",
+              "examples/nipal3"
+            ]
+          },
+          {
+            "group": "Tutorials",
+            "pages": [
+              "examples/end-to-end-tutorial",
+              "examples/custom-genome"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Random Forest classifier for isoform functional prediction",
+    "SHAP-based model interpretability and feature importance",
+    "QSplice module for RNA-seq splice junction quantification",
+    "Pfam effects analysis for domain-level impact assessment",
+    "Support for multiple genome assemblies and species",
+    "Pre-computed predictions for GENCODE, RefSeq, and Ensembl annotations"
+  ],
+  "publicApiSurface": [
+    "trifid.models.train - Train TRIFID model with custom or pretrained configurations",
+    "trifid.models.predict - Generate functional predictions for splice isoforms",
+    "trifid.models.interpret - SHAP-based interpretation of model predictions",
+    "trifid.preprocessing.qsplice - Quantify splice junction coverage from RNA-seq",
+    "trifid.preprocessing.pfam_effects - Analyze Pfam domain effects of alternative splicing",
+    "trifid.preprocessing.label_fragments - Label fragment and duplication isoforms",
+    "trifid.data.make_dataset - Create complete feature dataset for training"
+  ]
+}
