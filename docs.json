@@ -105,6 +105,12 @@
             "pages": [
               "api/utils/utils"
             ]
+          },
+          {
+            "group": "Visualization",
+            "pages": [
+              "api/visualization/figures"
+            ]
           }
         ]
       },
